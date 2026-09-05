@@ -25,11 +25,25 @@ android {
 
         // Overridden per build type below; read at runtime via BuildConfig.API_BASE_URL.
         buildConfigField("String", "API_BASE_URL", "\"https://prod-api.example.com/api/mobile/receiving/\"")
+
+        // §5.1: OAuth 2.0 Authorization Code + PKCE against Keycloak, via a
+        // dedicated public client provisioned for this app (backend issue #1729).
+        // OAUTH_ISSUER is the realm base -- AuthConfig appends the standard
+        // Keycloak `/protocol/openid-connect/{auth,token}` suffixes.
+        buildConfigField("String", "OAUTH_ISSUER", "\"https://auth.example.com/realms/sellernest\"")
+        buildConfigField("String", "OAUTH_CLIENT_ID", "\"po-receiving-android\"")
+
+        // AppAuth's RedirectUriReceiverActivity (merged in from its own manifest)
+        // uses this placeholder to register the redirect URI's custom scheme.
+        // Kept equal to applicationId, the conventional AppAuth-Android scheme.
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.sellernest.poreceiving"
     }
 
     buildTypes {
         debug {
             buildConfigField("String", "API_BASE_URL", "\"https://staging-api.example.com/api/mobile/receiving/\"")
+            buildConfigField("String", "OAUTH_ISSUER", "\"https://staging-auth.example.com/realms/sellernest\"")
+            buildConfigField("String", "OAUTH_CLIENT_ID", "\"po-receiving-android\"")
         }
         release {
             isMinifyEnabled = true
@@ -59,6 +73,11 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            // Lets a plain JVM unit test safely construct/touch simple android.jar
+            // classes (e.g. a placeholder Intent passed to a fake) by returning
+            // default values instead of throwing "Stub!" -- needed by
+            // SignInViewModelTest, which never runs on a real device.
+            isReturnDefaultValues = true
         }
     }
 }
@@ -87,6 +106,10 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+    // Lets androidTest sources declare @EntryPoint interfaces (e.g. to reach a
+    // Hilt-provided singleton like QueuedSubmissionDao from a test that doesn't
+    // need the full @HiltAndroidTest / HiltTestApplication scaffolding).
+    kspAndroidTest(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)

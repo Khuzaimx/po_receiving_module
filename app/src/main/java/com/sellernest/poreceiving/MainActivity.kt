@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.sellernest.poreceiving.navigation.PoReceivingNavGraph
+import com.sellernest.poreceiving.navigation.PoReceivingRoot
 import com.sellernest.poreceiving.ui.theme.PoReceivingTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             PoReceivingTheme {
-                PoReceivingNavGraph()
+                PoReceivingRoot()
             }
         }
     }

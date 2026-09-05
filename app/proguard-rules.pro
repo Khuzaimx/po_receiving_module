@@ -8,3 +8,9 @@
 -keepclasseswithmembers class com.sellernest.poreceiving.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# EncryptedSharedPreferences (androidx.security.crypto) is backed by Tink, which
+# does its own reflective lookups for cipher/key-manager implementations.
+-keep class com.google.crypto.tink.** { *; }
+-keep interface com.google.crypto.tink.** { *; }
+-dontwarn com.google.crypto.tink.**

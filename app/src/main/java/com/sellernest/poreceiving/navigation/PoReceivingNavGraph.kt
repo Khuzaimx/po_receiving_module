@@ -1,6 +1,7 @@
 package com.sellernest.poreceiving.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -10,6 +11,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.sellernest.poreceiving.core.mvvm.example.ExampleCounterScreen
 import com.sellernest.poreceiving.ui.components.ComponentGalleryScreen
+import com.sellernest.poreceiving.ui.screens.signin.SignInScreen
 
 private val poIdArg = navArgument("poId") { type = NavType.LongType }
 private val lineIdArg = navArgument("lineId") { type = NavType.LongType }
@@ -19,9 +21,12 @@ private val lineIdArg = navArgument("lineId") { type = NavType.LongType }
  * [ScreenStub] bodies one milestone at a time without changing this wiring.
  */
 @Composable
-fun PoReceivingNavGraph(navController: NavHostController = rememberNavController()) {
-    NavHost(navController = navController, startDestination = Routes.SIGN_IN) {
-        composable(Routes.SIGN_IN) { ScreenStub("SIGN IN", "§7.1") }
+fun PoReceivingNavGraph(
+    navController: NavHostController = rememberNavController(),
+    modifier: Modifier = Modifier,
+) {
+    NavHost(navController = navController, startDestination = Routes.SIGN_IN, modifier = modifier) {
+        composable(Routes.SIGN_IN) { SignInScreen() }
         composable(Routes.WAREHOUSE_SELECTION) { ScreenStub("SELECT WAREHOUSE", "§7.2") }
         composable(Routes.WORK_QUEUE) { ScreenStub("RECEIVE", "§7.3") }
 
