@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -31,13 +32,20 @@ import com.sellernest.poreceiving.ui.theme.StateTone
  * all provisioning happens in the web admin UI (§1.3).
  */
 @Composable
-fun SignInScreen(viewModel: SignInViewModel = hiltViewModel()) {
+fun SignInScreen(onNavigate: (SignInDestination) -> Unit, viewModel: SignInViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
 
     val signInLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         viewModel.onEvent(SignInUiEvent.AuthorizationResultReceived(result.data))
+    }
+
+    LaunchedEffect(state.navigateTo) {
+        state.navigateTo?.let { destination ->
+            onNavigate(destination)
+            viewModel.onEvent(SignInUiEvent.NavigationHandled)
+        }
     }
 
     SignInScreenContent(

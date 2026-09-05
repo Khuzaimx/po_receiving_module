@@ -33,7 +33,16 @@ data class PurchaseOrderLine(
     val requiresSerialNumber: Boolean,
 )
 
-/** §9.2 `GET /purchase-orders/{id}/`. */
+/**
+ * §9.2 `GET /purchase-orders/{id}/`.
+ *
+ * [totalUnitsExpected] and [status] aren't in §9.2's literal example, but M1.8's
+ * scope explicitly requires them for the PO Header screen ("320 units expected
+ * is a PO-level total... shown only when the backend supplies it"; the
+ * wireframe also shows "Status: PARTIALLY RECEIVED"). [PurchaseOrderSummary]
+ * already carries both for the work queue -- modelled the same way,
+ * nullable, here. Confirm against the real backend before this ships.
+ */
 @Serializable
 data class PurchaseOrderDetail(
     val id: Long,
@@ -42,4 +51,6 @@ data class PurchaseOrderDetail(
     val warehouse: WarehouseRef,
     val blindCount: Boolean,
     val lines: List<PurchaseOrderLine>,
+    val totalUnitsExpected: Int? = null,
+    val status: String? = null,
 )

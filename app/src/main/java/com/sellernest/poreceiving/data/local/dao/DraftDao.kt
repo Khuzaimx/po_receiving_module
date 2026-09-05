@@ -46,4 +46,14 @@ interface DraftDao {
 
     @Query("SELECT COUNT(*) FROM drafts WHERE state = :state")
     fun observeCountInState(state: DraftState): Flow<Int>
+
+    /**
+     * M1.5: "Changing warehouse mid-session is possible from the menu but
+     * blocked while a count is in progress, with an explanation naming the
+     * in-progress PO." Any non-terminal draft counts, regardless of which PO
+     * or warehouse it belongs to -- returns the draft (not just a boolean) so
+     * the caller can name it.
+     */
+    @Query("SELECT * FROM drafts WHERE state NOT IN ('DISCARDED', 'RECEIPTED') LIMIT 1")
+    suspend fun getAnyActiveDraft(): DraftEntity?
 }

@@ -26,4 +26,10 @@ internal abstract class SessionModule {
     @Binds
     @Singleton
     abstract fun bindActiveOrgProvider(impl: MeBackedActiveOrgProvider): ActiveOrgProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindWarehouseSelectionStorage(
+        impl: SharedPrefsWarehouseSelectionStorage,
+    ): WarehouseSelectionStorage
 }
