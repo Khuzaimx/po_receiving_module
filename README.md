@@ -1,4 +1,4 @@
-Purchase order receiving module for sellernest warehouses an internal app for receiving purchase orders at a warehouse dock integrated with sellernest. 
+Purchase order receiving module for sellernest. 
 
 ## Stack
 
