@@ -3,6 +3,7 @@ package com.sellernest.poreceiving
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.sellernest.poreceiving.scan.datawedge.DataWedgeIntegration
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -20,8 +21,18 @@ class PoReceivingApp : Application(), Configuration.Provider {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    @Inject
+    lateinit var dataWedgeIntegration: DataWedgeIntegration
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .build()
+
+    override fun onCreate() {
+        super.onCreate()
+        // §2.1: profile creation/registration on every launch, not gated on
+        // "first launch" -- see DataWedgeProfileManager's doc for why.
+        dataWedgeIntegration.start()
+    }
 }
