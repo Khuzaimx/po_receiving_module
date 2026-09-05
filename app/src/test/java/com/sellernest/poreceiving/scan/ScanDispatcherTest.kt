@@ -70,4 +70,61 @@ class ScanDispatcherTest {
         // on its own. The point is that dispatching with no owner must not throw.
         ScanDispatcher().dispatch("ABC123", ScanSource.CAMERA)
     }
+
+    @Test
+    fun `a trailing CRLF and surrounding whitespace are stripped before the listener sees the code`() {
+        val dispatcher = ScanDispatcher()
+        val received = mutableListOf<String>()
+        dispatcher.register(ScanListener { code, _ -> received.add(code) })
+
+        dispatcher.dispatch("ABC123\r\n", ScanSource.HARDWARE_INTENT)
+
+        assertEquals(listOf("ABC123"), received)
+    }
+
+    @Test
+    fun `surrounding spaces are stripped the same way as CRLF`() {
+        val dispatcher = ScanDispatcher()
+        val received = mutableListOf<String>()
+        dispatcher.register(ScanListener { code, _ -> received.add(code) })
+
+        dispatcher.dispatch(" ABC123 ", ScanSource.KEYBOARD_WEDGE)
+
+        assertEquals(listOf("ABC123"), received)
+    }
+
+    @Test
+    fun `an immediate repeat of the same code is debounced`() {
+        val dispatcher = ScanDispatcher()
+        val received = mutableListOf<String>()
+        dispatcher.register(ScanListener { code, _ -> received.add(code) })
+
+        dispatcher.dispatch("ABC123", ScanSource.CAMERA)
+        dispatcher.dispatch("ABC123", ScanSource.CAMERA) // well within 800ms of the first
+
+        assertEquals(listOf("ABC123"), received)
+    }
+
+    @Test
+    fun `a different code arriving immediately after is not debounced`() {
+        val dispatcher = ScanDispatcher()
+        val received = mutableListOf<String>()
+        dispatcher.register(ScanListener { code, _ -> received.add(code) })
+
+        dispatcher.dispatch("ABC123", ScanSource.CAMERA)
+        dispatcher.dispatch("XYZ789", ScanSource.CAMERA)
+
+        assertEquals(listOf("ABC123", "XYZ789"), received)
+    }
+
+    @Test
+    fun `a code that is only whitespace after stripping is not dispatched`() {
+        val dispatcher = ScanDispatcher()
+        val received = mutableListOf<String>()
+        dispatcher.register(ScanListener { code, _ -> received.add(code) })
+
+        dispatcher.dispatch("   \r\n", ScanSource.KEYBOARD_WEDGE)
+
+        assertEquals(emptyList<String>(), received)
+    }
 }

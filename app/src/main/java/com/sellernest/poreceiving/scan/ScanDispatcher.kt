@@ -13,12 +13,26 @@ import javax.inject.Singleton
  * At most one listener is ever "current" -- registering a new one silently
  * replaces whatever was registered before, so exactly one screen receives a
  * scan even if several are technically alive in the back stack.
+ *
+ * §4.2's three hygiene rules are enforced here, centrally, so no input source
+ * or screen can bypass them: terminators/whitespace are stripped before a code
+ * is ever compared or forwarded, and an identical code within
+ * [DEBOUNCE_WINDOW_MS] of the previous *accepted* scan is silently dropped
+ * (a camera decodes the same barcode many times a second while it's in frame).
+ * "Never auto-advance on ambiguity" is a UI-layer rule instead -- see M2.6's
+ * `MultipleMatches` handling, which always requires an explicit choice.
  */
 @Singleton
 class ScanDispatcher @Inject constructor() {
 
     @Volatile
     private var currentOwner: ScanListener? = null
+
+    @Volatile
+    private var lastAcceptedCode: String? = null
+
+    @Volatile
+    private var lastAcceptedAtMillis: Long = 0L
 
     fun register(listener: ScanListener) {
         currentOwner = listener
@@ -32,7 +46,35 @@ class ScanDispatcher @Inject constructor() {
         }
     }
 
-    fun dispatch(code: String, source: ScanSource) {
+    fun dispatch(rawCode: String, source: ScanSource) {
+        val code = sanitizeScanCode(rawCode)
+        if (code.isEmpty()) return
+
+        val now = System.currentTimeMillis()
+        if (isDuplicateWithinDebounceWindow(code, lastAcceptedCode, now, lastAcceptedAtMillis)) return
+
+        lastAcceptedCode = code
+        lastAcceptedAtMillis = now
         currentOwner?.onScan(code, source)
     }
 }
+
+/** §4.2: "Strip terminators. Trailing \r, \n, and surrounding whitespace
+ *  before dispatch." A plain `trim()` covers all three -- `\r`/`\n` are
+ *  themselves whitespace characters, so trimming whitespace is trimming
+ *  terminators. A free function so it's unit-testable without a dispatcher
+ *  instance. */
+internal fun sanitizeScanCode(raw: String): String = raw.trim()
+
+/** §4.2: "Reject an identical code within 800 ms of the previous accepted
+ *  scan." Takes the clock reading as a parameter rather than calling
+ *  [System.currentTimeMillis] itself, so the decision is testable with exact,
+ *  reproducible timings. */
+internal fun isDuplicateWithinDebounceWindow(
+    code: String,
+    lastAcceptedCode: String?,
+    nowMillis: Long,
+    lastAcceptedAtMillis: Long,
+): Boolean = code == lastAcceptedCode && (nowMillis - lastAcceptedAtMillis) < DEBOUNCE_WINDOW_MS
+
+internal const val DEBOUNCE_WINDOW_MS = 800L
