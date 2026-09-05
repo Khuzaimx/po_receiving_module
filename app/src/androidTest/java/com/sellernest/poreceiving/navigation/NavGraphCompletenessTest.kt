@@ -1,9 +1,10 @@
 package com.sellernest.poreceiving.navigation
 
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.sellernest.poreceiving.MainActivity
 import com.sellernest.poreceiving.ui.theme.PoReceivingTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -15,12 +16,16 @@ import org.junit.runner.RunWith
  * as a stub." Navigates to every route in [Routes.allSpecRoutes] (substituting a
  * placeholder id for path arguments) and asserts the destination resolves without
  * crashing.
+ *
+ * Hosted in the real [MainActivity] (Hilt-backed): now that the Sign In route
+ * (M1.1) is a real screen using `hiltViewModel()`, a bare Hilt-free compose rule
+ * can no longer even reach the start destination.
  */
 @RunWith(AndroidJUnit4::class)
 class NavGraphCompletenessTest {
 
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
     fun everySpecRouteResolves() {
