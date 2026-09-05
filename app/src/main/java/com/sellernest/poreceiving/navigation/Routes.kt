@@ -5,6 +5,10 @@ package com.sellernest.poreceiving.navigation
  * to inspect the M0 design system (§3, §7 numbers are in comments for cross-reference).
  * Routes that operate on a specific PO or line carry that id as a nav argument now,
  * rather than being retrofitted when the real screen lands in a later milestone.
+ *
+ * SCAN_TO_COUNT and RECONCILE carry a *draft* id, not a PO id: both operate on
+ * a draft that must already exist (created by [com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen]
+ * tapping START RECEIVING/RESUME DRAFT), not on the PO directly.
  */
 object Routes {
     const val SIGN_IN = "sign_in" // §7.1
@@ -13,15 +17,16 @@ object Routes {
 
     private const val PO_ID_ARG = "poId"
     private const val LINE_ID_ARG = "lineId"
+    private const val DRAFT_ID_ARG = "draftId"
 
     const val PO_HEADER = "po_header/{$PO_ID_ARG}" // §7.4
     fun poHeader(poId: Long) = "po_header/$poId"
 
-    const val SCAN_TO_COUNT = "scan_to_count/{$PO_ID_ARG}" // §7.5
-    fun scanToCount(poId: Long) = "scan_to_count/$poId"
+    const val SCAN_TO_COUNT = "scan_to_count/{$DRAFT_ID_ARG}" // §7.5
+    fun scanToCount(draftId: Long) = "scan_to_count/$draftId"
 
-    const val RECONCILE = "reconcile/{$PO_ID_ARG}" // §7.7
-    fun reconcile(poId: Long) = "reconcile/$poId"
+    const val RECONCILE = "reconcile/{$DRAFT_ID_ARG}" // §7.7
+    fun reconcile(draftId: Long) = "reconcile/$draftId"
 
     const val DAMAGE_CAPTURE = "damage_capture/{$PO_ID_ARG}/{$LINE_ID_ARG}" // §7.8
     fun damageCapture(poId: Long, lineId: Long) = "damage_capture/$poId/$lineId"
@@ -32,8 +37,8 @@ object Routes {
     const val BIN_CONFIRMATION = "bin_confirmation/{$PO_ID_ARG}" // §7.10
     fun binConfirmation(poId: Long) = "bin_confirmation/$poId"
 
-    const val REVIEW_AND_SUBMIT = "review_and_submit/{$PO_ID_ARG}" // §7.11
-    fun reviewAndSubmit(poId: Long) = "review_and_submit/$poId"
+    const val REVIEW_AND_SUBMIT = "review_and_submit/{$DRAFT_ID_ARG}" // §7.11
+    fun reviewAndSubmit(draftId: Long) = "review_and_submit/$draftId"
 
     const val SUBMISSION_QUEUE = "submission_queue" // §7.12
     const val RECEIPT_HISTORY = "receipt_history" // §7.13

@@ -5,6 +5,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.sellernest.poreceiving.data.local.entities.DraftEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
+import com.sellernest.poreceiving.network.dto.ScanMatchedLine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,5 +64,43 @@ class DraftPersistenceInstrumentedTest {
         assertEquals("0f8c1e2a-1111", reloaded?.idempotencyKey)
 
         secondInstance.close()
+    }
+
+    /**
+     * M3.5 acceptance criterion: "Instrumented test: scan 20 items,
+     * `adb shell am force-stop`, relaunch, all 20 present with correct
+     * quantities." Twenty *scans* across ten distinct SKUs (two scans each,
+     * matching §7.5's "each scan of the same item increments by one"), using
+     * the real [DraftRepository] rather than the DAOs directly, so this
+     * exercises the exact write path a real screen would.
+     */
+    @Test
+    fun twentyScansAcrossTenLinesSurviveSimulatedProcessDeathWithCorrectQuantities() = runTest {
+        val firstDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+        val repository = DraftRepository(firstDb.draftDao(), firstDb.draftLineDao())
+
+        val draft = repository.openPurchaseOrder(10482, "PO-10482", warehouseId = 2)
+        repeat(10) { index ->
+            val line = ScanMatchedLine(
+                purchaseOrderItemId = index.toLong(),
+                sku = "SKU-$index",
+                name = "Item $index",
+                quantityAlreadyReceived = 0,
+                requiresSerialNumber = false,
+                fullyReceived = false,
+            )
+            repository.recordScan(draft.id, line) // 1st scan
+            repository.recordScan(draft.id, line) // 2nd scan -> counted quantity 2
+        }
+        firstDb.close()
+
+        val secondDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+        val lines = secondDb.draftLineDao().observeForDraft(draft.id).first()
+
+        assertEquals(10, lines.size)
+        assertEquals(setOf(2), lines.map { it.countedQuantity }.toSet())
+        assertEquals((0..9).map { "SKU-$it" }.toSet(), lines.map { it.sku }.toSet())
+
+        secondDb.close()
     }
 }

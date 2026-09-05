@@ -41,6 +41,7 @@ class NavGraphCompletenessTest {
             val concreteRoute = route
                 .replace("{poId}", "1")
                 .replace("{lineId}", "1")
+                .replace("{draftId}", "1")
 
             composeTestRule.runOnUiThread {
                 navController.navigate(concreteRoute)

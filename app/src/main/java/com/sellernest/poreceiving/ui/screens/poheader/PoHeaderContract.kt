@@ -2,6 +2,7 @@ package com.sellernest.poreceiving.ui.screens.poheader
 
 import com.sellernest.poreceiving.core.mvvm.UiEvent
 import com.sellernest.poreceiving.core.mvvm.UiState
+import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.network.dto.PurchaseOrderDetail
 
 data class PoHeaderUiState(
@@ -13,11 +14,30 @@ data class PoHeaderUiState(
     val offlineMessage: String? = null,
     /** Any other failure (5xx, malformed response, etc.). */
     val errorMessage: String? = null,
-    /** Null when no local draft exists for this PO/warehouse; otherwise the
-     *  total counted quantity to show on "RESUME DRAFT (n scanned)". */
+    /** Null when no local draft exists for this PO/warehouse. */
+    val existingDraftId: Long? = null,
+    val existingDraftState: DraftState? = null,
+    /** Total counted quantity, for "RESUME DRAFT (n scanned)". */
     val existingDraftScannedCount: Int? = null,
-) : UiState
+    /** One-shot: consumed then reset by the screen once it navigates. */
+    val navigateToDraftId: Long? = null,
+    val showDiscardConfirmation: Boolean = false,
+) : UiState {
+
+    /**
+     * §6.3: PO_OPEN is the only state "abandon" (-> DISCARDED) is a legal
+     * transition from -- once counting has begun, discard is no longer
+     * offered here (see [com.sellernest.poreceiving.data.local.DraftStateMachine]).
+     */
+    val canDiscardExistingDraft: Boolean get() = existingDraftState == DraftState.PO_OPEN
+}
 
 sealed interface PoHeaderUiEvent : UiEvent {
     data object RetryRequested : PoHeaderUiEvent
+    data object StartReceivingTapped : PoHeaderUiEvent
+    data object ResumeDraftTapped : PoHeaderUiEvent
+    data object DiscardRequested : PoHeaderUiEvent
+    data object DiscardConfirmed : PoHeaderUiEvent
+    data object DiscardCancelled : PoHeaderUiEvent
+    data object NavigationHandled : PoHeaderUiEvent
 }

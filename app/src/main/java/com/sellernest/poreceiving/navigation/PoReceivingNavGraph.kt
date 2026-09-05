@@ -14,6 +14,8 @@ import com.sellernest.poreceiving.ui.components.ComponentGalleryScreen
 import com.sellernest.poreceiving.ui.screens.accessgate.DeviceRevokedScreen
 import com.sellernest.poreceiving.ui.screens.accessgate.MobileAccessDisabledScreen
 import com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen
+import com.sellernest.poreceiving.ui.screens.reconcile.ReconcileScreen
+import com.sellernest.poreceiving.ui.screens.scantocount.ScanToCountScreen
 import com.sellernest.poreceiving.ui.screens.signin.SignInDestination
 import com.sellernest.poreceiving.ui.screens.signin.SignInScreen
 import com.sellernest.poreceiving.ui.screens.warehouseselection.WarehouseSelectionScreen
@@ -21,6 +23,7 @@ import com.sellernest.poreceiving.ui.screens.workqueue.WorkQueueScreen
 
 private val poIdArg = navArgument("poId") { type = NavType.LongType }
 private val lineIdArg = navArgument("lineId") { type = NavType.LongType }
+private val draftIdArg = navArgument("draftId") { type = NavType.LongType }
 
 /**
  * The full §7 screen graph. Every route resolves today; real screens replace
@@ -64,14 +67,38 @@ fun PoReceivingNavGraph(
         composable(Routes.MOBILE_ACCESS_DISABLED) { MobileAccessDisabledScreen() }
         composable(Routes.DEVICE_REVOKED) { DeviceRevokedScreen() }
 
-        poScopedRoute(Routes.PO_HEADER) { poId ->
+        poScopedRoute(Routes.PO_HEADER) {
             PoHeaderScreen(
-                onStartReceiving = { navController.navigate(Routes.scanToCount(poId)) },
-                onResumeDraft = { navController.navigate(Routes.scanToCount(poId)) },
+                onNavigateToScanToCount = { draftId -> navController.navigate(Routes.scanToCount(draftId)) },
             )
         }
-        poScopedRoute(Routes.SCAN_TO_COUNT) { poId -> ScreenStub("SCAN TO COUNT — PO $poId", "§7.5") }
-        poScopedRoute(Routes.RECONCILE) { poId -> ScreenStub("RECONCILE PO $poId", "§7.7") }
+
+        draftScopedRoute(Routes.SCAN_TO_COUNT) { draftId ->
+            ScanToCountScreen(
+                onNavigateToReconcile = { reconcileDraftId ->
+                    navController.navigate(Routes.reconcile(reconcileDraftId)) {
+                        // §4.1 acceptance criterion: "Backing out of RECONCILE
+                        // to COUNTING is either disallowed or documented" --
+                        // popping Scan-to-Count off the back stack makes it
+                        // disallowed: system back from RECONCILE goes to PO
+                        // Header, never to a stale mid-count screen.
+                        popUpTo(Routes.scanToCount(draftId)) { inclusive = true }
+                    }
+                },
+                onNavigateToWorkQueue = {
+                    navController.navigate(Routes.WORK_QUEUE) {
+                        popUpTo(Routes.WORK_QUEUE) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        draftScopedRoute(Routes.RECONCILE) { draftId ->
+            ReconcileScreen(
+                onNavigateToReview = { reviewDraftId -> navController.navigate(Routes.reviewAndSubmit(reviewDraftId)) },
+            )
+        }
+
         poAndLineScopedRoute(Routes.DAMAGE_CAPTURE) { poId, lineId ->
             ScreenStub("DAMAGE — PO $poId / LINE $lineId", "§7.8")
         }
@@ -79,7 +106,7 @@ fun PoReceivingNavGraph(
             ScreenStub("SERIALS — PO $poId / LINE $lineId", "§7.9")
         }
         poScopedRoute(Routes.BIN_CONFIRMATION) { poId -> ScreenStub("PUT AWAY — PO $poId", "§7.10") }
-        poScopedRoute(Routes.REVIEW_AND_SUBMIT) { poId -> ScreenStub("REVIEW — PO $poId", "§7.11") }
+        draftScopedRoute(Routes.REVIEW_AND_SUBMIT) { draftId -> ScreenStub("REVIEW — draft $draftId", "§7.11") }
 
         composable(Routes.SUBMISSION_QUEUE) { ScreenStub("SUBMISSIONS", "§7.12") }
         composable(Routes.RECEIPT_HISTORY) { ScreenStub("MY RECEIPTS", "§7.13") }
@@ -95,6 +122,15 @@ private fun NavGraphBuilder.poScopedRoute(
 ) {
     composable(route, arguments = listOf(poIdArg)) { backStackEntry ->
         content(backStackEntry.arguments?.getLong("poId") ?: -1L)
+    }
+}
+
+private fun NavGraphBuilder.draftScopedRoute(
+    route: String,
+    content: @Composable (draftId: Long) -> Unit,
+) {
+    composable(route, arguments = listOf(draftIdArg)) { backStackEntry ->
+        content(backStackEntry.arguments?.getLong("draftId") ?: -1L)
     }
 }
 
