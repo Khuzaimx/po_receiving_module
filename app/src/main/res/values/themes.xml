@@ -1,0 +1,10 @@
+<resources>
+    <!-- Single high-contrast light theme (requirements §3.1: "Dark mode: Not in the
+         first release. A single high-contrast light theme is correct for sunlit docks
+         and halves the QA surface."). There is deliberately no values-night variant. -->
+    <style name="Theme.PoReceiving" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FFFFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#FFFFFFFF</item>
+    </style>
+</resources>
