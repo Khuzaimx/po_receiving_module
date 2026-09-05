@@ -6,7 +6,9 @@ import com.sellernest.poreceiving.auth.AuthorizationOutcome
 import com.sellernest.poreceiving.auth.TokenStorage
 import com.sellernest.poreceiving.core.mvvm.BaseViewModel
 import com.sellernest.poreceiving.network.ApiResult
+import com.sellernest.poreceiving.session.BlockingAccessGate
 import com.sellernest.poreceiving.session.MeRepository
+import com.sellernest.poreceiving.session.blockingAccessGateFor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -27,6 +29,9 @@ class SignInViewModel @Inject constructor(
 
             is SignInUiEvent.AuthorizationResultReceived ->
                 handleResult(event.resultIntent)
+
+            is SignInUiEvent.NavigationHandled ->
+                updateState { it.copy(navigateTo = null) }
         }
     }
 
@@ -41,21 +46,7 @@ class SignInViewModel @Inject constructor(
 
         scope.launch {
             when (val outcome = authGateway.handleAuthorizationResponse(resultIntent)) {
-                is AuthorizationOutcome.Success -> {
-                    tokenStorage.saveTokens(outcome.tokens)
-
-                    // §5.2: "X-Active-Org... set from the active company
-                    // returned by /api/me/" -- resolved once, right here.
-                    val meResult = meRepository.refresh()
-                    val errorMessage = if (meResult is ApiResult.Success) {
-                        null
-                    } else {
-                        "Signed in, but couldn't load your account. Check your connection and try again."
-                    }
-                    updateState { it.copy(isSigningIn = false, errorMessage = errorMessage) }
-                    // Where sign-in navigates to next (warehouse selection or the
-                    // work queue) is M1.5's job, once that screen exists.
-                }
+                is AuthorizationOutcome.Success -> handleSignedIn(outcome)
 
                 AuthorizationOutcome.Cancelled ->
                     updateState { it.copy(isSigningIn = false, errorMessage = null) }
@@ -64,5 +55,40 @@ class SignInViewModel @Inject constructor(
                     updateState { it.copy(isSigningIn = false, errorMessage = outcome.message) }
             }
         }
+    }
+
+    private suspend fun handleSignedIn(outcome: AuthorizationOutcome.Success) {
+        tokenStorage.saveTokens(outcome.tokens)
+
+        // §5.2: "X-Active-Org... set from the active company returned by
+        // /api/me/" -- resolved once, right here.
+        val meResult = meRepository.refresh()
+
+        when (blockingAccessGateFor(meResult)) {
+            // §5.3: no token clearing for this gate -- only device revocation
+            // clears tokens (and there, drafts are still retained).
+            BlockingAccessGate.MobileAccessDisabled ->
+                updateState {
+                    it.copy(isSigningIn = false, errorMessage = null, navigateTo = SignInDestination.MOBILE_ACCESS_DISABLED)
+                }
+
+            BlockingAccessGate.DeviceRevoked -> {
+                tokenStorage.clear()
+                meRepository.clear()
+                updateState {
+                    it.copy(isSigningIn = false, errorMessage = null, navigateTo = SignInDestination.DEVICE_REVOKED)
+                }
+            }
+
+            null -> {
+                val errorMessage = if (meResult is ApiResult.Success) null else NO_SESSION_ERROR
+                val navigateTo = if (meResult is ApiResult.Success) SignInDestination.WAREHOUSE_SELECTION else null
+                updateState { it.copy(isSigningIn = false, errorMessage = errorMessage, navigateTo = navigateTo) }
+            }
+        }
+    }
+
+    private companion object {
+        const val NO_SESSION_ERROR = "Signed in, but couldn't load your account. Check your connection and try again."
     }
 }

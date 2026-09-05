@@ -38,6 +38,11 @@ object Routes {
     const val SUBMISSION_QUEUE = "submission_queue" // §7.12
     const val RECEIPT_HISTORY = "receipt_history" // §7.13
 
+    // §5.3's blocking access gates (M1.6) -- terminal screens, not part of the
+    // §7 numbering, but full nav destinations all the same.
+    const val MOBILE_ACCESS_DISABLED = "mobile_access_disabled"
+    const val DEVICE_REVOKED = "device_revoked"
+
     // Developer-only entries, not part of §7's receiving flow.
     const val COMPONENT_GALLERY = "dev/component_gallery"
     const val EXAMPLE_COUNTER = "dev/example_counter"
