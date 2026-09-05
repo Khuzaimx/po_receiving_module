@@ -1,9 +1,4 @@
-# po_receiving_sellernest
-
-Purchase order receiving module for sellernest warehouses — a dedicated Android
-application for receiving purchase orders at a warehouse dock. See
-`po-receiving-android-app-requirements.pdf` for the full specification (backend
-tracking issue #1728, `99Technologies-ai/seller-nest`).
+Purchase order receiving module for sellernest warehouses an internal app for receiving purchase orders at a warehouse dock integrated with sellernest. 
 
 ## Stack
 
