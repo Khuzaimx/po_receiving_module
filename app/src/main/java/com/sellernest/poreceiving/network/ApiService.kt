@@ -1,5 +1,6 @@
 package com.sellernest.poreceiving.network
 
+import com.sellernest.poreceiving.network.dto.MeResponse
 import com.sellernest.poreceiving.network.dto.PagedResponse
 import com.sellernest.poreceiving.network.dto.PhotoUploadResponse
 import com.sellernest.poreceiving.network.dto.PurchaseOrderDetail
@@ -29,6 +30,14 @@ import retrofit2.http.Query
  * [safeApiCall], never a bare Retrofit call.
  */
 interface ApiService {
+
+    /**
+     * §5.2, §9 preamble. A leading slash resolves against the base URL's host,
+     * not its `/api/mobile/receiving/` path -- this endpoint is shared with the
+     * web client, not mobile-receiving-specific.
+     */
+    @GET("/api/me/")
+    suspend fun getMe(): Response<MeResponse>
 
     /** §9.1 */
     @GET("purchase-orders/")
