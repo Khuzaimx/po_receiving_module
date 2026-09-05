@@ -24,7 +24,10 @@ import com.sellernest.poreceiving.ui.components.StatusBar
  * Also collects [com.sellernest.poreceiving.auth.SessionInvalidationNotifier]:
  * a failed proactive token refresh (§5.2: "a failed refresh is a hard logout to
  * the sign-in screen") clears the back stack and returns here, since this is the
- * one place holding the [NavHostController] that can do that.
+ * one place holding the [NavHostController] that can do that. The active-company
+ * session (M1.3) is cleared at the same time -- there is no explicit sign-out
+ * action anywhere in the app yet, so a hard logout is the only real trigger for
+ * "clear on sign-out" today; a future sign-out button must clear both too.
  */
 @Composable
 fun PoReceivingRoot(navController: NavHostController = rememberNavController()) {
@@ -32,6 +35,7 @@ fun PoReceivingRoot(navController: NavHostController = rememberNavController()) 
 
     LaunchedEffect(Unit) {
         sessionViewModel.sessionInvalidationNotifier.hardLogout.collect {
+            sessionViewModel.meRepository.clear()
             navController.navigate(Routes.SIGN_IN) {
                 // Clears the entire back stack: popping up to and including the
                 // graph's own root id, rather than any specific destination,

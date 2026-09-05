@@ -5,6 +5,8 @@ import com.sellernest.poreceiving.auth.AuthGateway
 import com.sellernest.poreceiving.auth.AuthorizationOutcome
 import com.sellernest.poreceiving.auth.TokenStorage
 import com.sellernest.poreceiving.core.mvvm.BaseViewModel
+import com.sellernest.poreceiving.network.ApiResult
+import com.sellernest.poreceiving.session.MeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -13,6 +15,7 @@ import javax.inject.Inject
 class SignInViewModel @Inject constructor(
     private val authGateway: AuthGateway,
     private val tokenStorage: TokenStorage,
+    private val meRepository: MeRepository,
 ) : BaseViewModel<SignInUiState, SignInUiEvent>(SignInUiState()) {
 
     fun buildSignInIntent(): Intent = authGateway.buildSignInIntent()
@@ -40,10 +43,18 @@ class SignInViewModel @Inject constructor(
             when (val outcome = authGateway.handleAuthorizationResponse(resultIntent)) {
                 is AuthorizationOutcome.Success -> {
                     tokenStorage.saveTokens(outcome.tokens)
-                    updateState { it.copy(isSigningIn = false, errorMessage = null) }
+
+                    // §5.2: "X-Active-Org... set from the active company
+                    // returned by /api/me/" -- resolved once, right here.
+                    val meResult = meRepository.refresh()
+                    val errorMessage = if (meResult is ApiResult.Success) {
+                        null
+                    } else {
+                        "Signed in, but couldn't load your account. Check your connection and try again."
+                    }
+                    updateState { it.copy(isSigningIn = false, errorMessage = errorMessage) }
                     // Where sign-in navigates to next (warehouse selection or the
-                    // work queue) is M1.3/M1.5's job, once there's real session
-                    // data to route on.
+                    // work queue) is M1.5's job, once that screen exists.
                 }
 
                 AuthorizationOutcome.Cancelled ->

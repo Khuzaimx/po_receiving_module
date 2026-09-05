@@ -15,11 +15,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sellernest.poreceiving.BuildConfig
 import com.sellernest.poreceiving.network.ApiConfig
 import com.sellernest.poreceiving.ui.components.PrimaryButton
 import com.sellernest.poreceiving.ui.components.StateBadge
+import com.sellernest.poreceiving.ui.theme.PoReceivingTheme
 import com.sellernest.poreceiving.ui.theme.Spacing
 import com.sellernest.poreceiving.ui.theme.StateTone
 
@@ -38,6 +40,20 @@ fun SignInScreen(viewModel: SignInViewModel = hiltViewModel()) {
         viewModel.onEvent(SignInUiEvent.AuthorizationResultReceived(result.data))
     }
 
+    SignInScreenContent(
+        state = state,
+        onSignInTapped = {
+            viewModel.onEvent(SignInUiEvent.SignInTapped)
+            signInLauncher.launch(viewModel.buildSignInIntent())
+        },
+    )
+}
+
+/** Internal, not private: exercised directly by `SignInScreenInstrumentedTest`
+ *  (androidTest can see `internal` `main` declarations) so screen-content tests
+ *  don't need a Hilt-backed `SignInViewModel`. */
+@Composable
+internal fun SignInScreenContent(state: SignInUiState, onSignInTapped: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -50,10 +66,7 @@ fun SignInScreen(viewModel: SignInViewModel = hiltViewModel()) {
         PrimaryButton(
             text = if (state.isSigningIn) "SIGNING IN..." else "SIGN IN",
             enabled = !state.isSigningIn,
-            onClick = {
-                viewModel.onEvent(SignInUiEvent.SignInTapped)
-                signInLauncher.launch(viewModel.buildSignInIntent())
-            },
+            onClick = onSignInTapped,
         )
 
         state.errorMessage?.let { message ->
@@ -68,4 +81,28 @@ fun SignInScreen(viewModel: SignInViewModel = hiltViewModel()) {
             style = MaterialTheme.typography.bodyLarge,
         )
     }
+}
+
+@Preview(name = "Portrait", showBackground = true, widthDp = 360, heightDp = 800)
+@Composable
+private fun SignInScreenPortraitPreview() {
+    PoReceivingTheme { SignInScreenContent(state = SignInUiState(), onSignInTapped = {}) }
+}
+
+@Preview(name = "Landscape", showBackground = true, widthDp = 800, heightDp = 360)
+@Composable
+private fun SignInScreenLandscapePreview() {
+    PoReceivingTheme { SignInScreenContent(state = SignInUiState(), onSignInTapped = {}) }
+}
+
+@Preview(
+    name = "Largest font scale",
+    showBackground = true,
+    widthDp = 360,
+    heightDp = 800,
+    fontScale = 2.0f,
+)
+@Composable
+private fun SignInScreenLargeFontScalePreview() {
+    PoReceivingTheme { SignInScreenContent(state = SignInUiState(), onSignInTapped = {}) }
 }

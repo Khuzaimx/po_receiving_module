@@ -13,4 +13,5 @@ import javax.inject.Inject
 @HiltViewModel
 class SessionViewModel @Inject constructor(
     val sessionInvalidationNotifier: SessionInvalidationNotifier,
+    val meRepository: MeRepository,
 ) : ViewModel()
