@@ -18,10 +18,11 @@ private val IndustrialColorScheme = lightColorScheme(
 )
 
 /**
- * The app's one and only theme. There is deliberately no `darkColorScheme()` branch
- * on `isSystemInDarkTheme()` — requirements §3.1: "Dark mode: Not in the first
- * release. A single high-contrast light theme is correct for sunlit docks and
- * halves the QA surface."
+ * The app's one and only theme. There is deliberately no dark-theme branch
+ * keyed off the system setting — requirements §3.1: "Dark mode: Not in the
+ * first release. A single high-contrast light theme is correct for sunlit
+ * docks and halves the QA surface." (See `ScopeComplianceAuditTest` for the
+ * guardrail this absence is checked against.)
  */
 @Composable
 fun PoReceivingTheme(content: @Composable () -> Unit) {
