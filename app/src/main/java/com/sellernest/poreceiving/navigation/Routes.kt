@@ -6,9 +6,14 @@ package com.sellernest.poreceiving.navigation
  * Routes that operate on a specific PO or line carry that id as a nav argument now,
  * rather than being retrofitted when the real screen lands in a later milestone.
  *
- * SCAN_TO_COUNT and RECONCILE carry a *draft* id, not a PO id: both operate on
- * a draft that must already exist (created by [com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen]
- * tapping START RECEIVING/RESUME DRAFT), not on the PO directly.
+ * SCAN_TO_COUNT, RECONCILE, DAMAGE_CAPTURE, SERIAL_CAPTURE, and
+ * BIN_CONFIRMATION all carry a *draft* id, not a PO id: every one of them
+ * operates on a draft that must already exist (created by
+ * [com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen] tapping
+ * START RECEIVING/RESUME DRAFT), never on the PO directly. DAMAGE_CAPTURE and
+ * SERIAL_CAPTURE additionally carry the purchase-order-item id identifying
+ * *which* draft line, the same identifier [com.sellernest.poreceiving.data.local.DraftRepository]
+ * addresses lines by everywhere else.
  */
 object Routes {
     const val SIGN_IN = "sign_in" // §7.1
@@ -16,8 +21,8 @@ object Routes {
     const val WORK_QUEUE = "work_queue" // §7.3
 
     private const val PO_ID_ARG = "poId"
-    private const val LINE_ID_ARG = "lineId"
     private const val DRAFT_ID_ARG = "draftId"
+    private const val PURCHASE_ORDER_ITEM_ID_ARG = "purchaseOrderItemId"
 
     const val PO_HEADER = "po_header/{$PO_ID_ARG}" // §7.4
     fun poHeader(poId: Long) = "po_header/$poId"
@@ -28,14 +33,14 @@ object Routes {
     const val RECONCILE = "reconcile/{$DRAFT_ID_ARG}" // §7.7
     fun reconcile(draftId: Long) = "reconcile/$draftId"
 
-    const val DAMAGE_CAPTURE = "damage_capture/{$PO_ID_ARG}/{$LINE_ID_ARG}" // §7.8
-    fun damageCapture(poId: Long, lineId: Long) = "damage_capture/$poId/$lineId"
+    const val DAMAGE_CAPTURE = "damage_capture/{$DRAFT_ID_ARG}/{$PURCHASE_ORDER_ITEM_ID_ARG}" // §7.8
+    fun damageCapture(draftId: Long, purchaseOrderItemId: Long) = "damage_capture/$draftId/$purchaseOrderItemId"
 
-    const val SERIAL_CAPTURE = "serial_capture/{$PO_ID_ARG}/{$LINE_ID_ARG}" // §7.9
-    fun serialCapture(poId: Long, lineId: Long) = "serial_capture/$poId/$lineId"
+    const val SERIAL_CAPTURE = "serial_capture/{$DRAFT_ID_ARG}/{$PURCHASE_ORDER_ITEM_ID_ARG}" // §7.9
+    fun serialCapture(draftId: Long, purchaseOrderItemId: Long) = "serial_capture/$draftId/$purchaseOrderItemId"
 
-    const val BIN_CONFIRMATION = "bin_confirmation/{$PO_ID_ARG}" // §7.10
-    fun binConfirmation(poId: Long) = "bin_confirmation/$poId"
+    const val BIN_CONFIRMATION = "bin_confirmation/{$DRAFT_ID_ARG}" // §7.10
+    fun binConfirmation(draftId: Long) = "bin_confirmation/$draftId"
 
     const val REVIEW_AND_SUBMIT = "review_and_submit/{$DRAFT_ID_ARG}" // §7.11
     fun reviewAndSubmit(draftId: Long) = "review_and_submit/$draftId"

@@ -3,6 +3,9 @@ package com.sellernest.poreceiving.ui.screens.scantocount
 import androidx.lifecycle.SavedStateHandle
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.sellernest.poreceiving.data.local.DraftRepository
+import com.sellernest.poreceiving.data.local.FakeDraftPhotoDao
+import com.sellernest.poreceiving.data.local.FakeDraftSerialDao
+import com.sellernest.poreceiving.data.local.FakeQueuedSubmissionDao
 import com.sellernest.poreceiving.data.local.entities.DraftEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.network.ApiService
@@ -77,7 +80,7 @@ class ScanToCountViewModelTest {
         apiService = retrofit.create(ApiService::class.java)
         draftDao = FakeDraftDao()
         draftLineDao = FakeDraftLineDao()
-        draftRepository = DraftRepository(draftDao, draftLineDao)
+        draftRepository = DraftRepository(draftDao, draftLineDao, FakeDraftPhotoDao(), FakeDraftSerialDao(), FakeQueuedSubmissionDao())
         feedback = FakeScanFeedbackService()
 
         val draft = draftRepository.openPurchaseOrder(10482, "PO-10482", warehouseId = 2)

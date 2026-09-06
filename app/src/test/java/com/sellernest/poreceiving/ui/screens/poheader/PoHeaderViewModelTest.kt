@@ -3,6 +3,9 @@ package com.sellernest.poreceiving.ui.screens.poheader
 import androidx.lifecycle.SavedStateHandle
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.sellernest.poreceiving.data.local.DraftRepository
+import com.sellernest.poreceiving.data.local.FakeDraftPhotoDao
+import com.sellernest.poreceiving.data.local.FakeDraftSerialDao
+import com.sellernest.poreceiving.data.local.FakeQueuedSubmissionDao
 import com.sellernest.poreceiving.data.local.entities.DraftEntity
 import com.sellernest.poreceiving.data.local.entities.DraftLineEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
@@ -78,7 +81,7 @@ class PoHeaderViewModelTest {
             json = json,
             draftDao = draftDao,
             draftLineDao = draftLineDao,
-            draftRepository = DraftRepository(draftDao, draftLineDao),
+            draftRepository = DraftRepository(draftDao, draftLineDao, FakeDraftPhotoDao(), FakeDraftSerialDao(), FakeQueuedSubmissionDao()),
             warehouseSelectionStorage = warehouseStorage,
         )
 
@@ -148,7 +151,7 @@ class PoHeaderViewModelTest {
 
         // Simulate a scan having happened via the same repository this
         // ViewModel uses, moving the draft to COUNTING.
-        DraftRepository(draftDao, draftLineDao).recordScan(
+        DraftRepository(draftDao, draftLineDao, FakeDraftPhotoDao(), FakeDraftSerialDao(), FakeQueuedSubmissionDao()).recordScan(
             draftId,
             ScanMatchedLine(
                 purchaseOrderItemId = 1, sku = "A", name = "A",

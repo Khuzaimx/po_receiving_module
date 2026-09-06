@@ -1,6 +1,7 @@
 package com.sellernest.poreceiving.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -16,6 +17,10 @@ interface DraftPhotoDao {
 
     @Update
     suspend fun update(photo: DraftPhotoEntity)
+
+    /** M4.4: "Removing a photo before submit removes it from the queue too." */
+    @Delete
+    suspend fun delete(photo: DraftPhotoEntity)
 
     @Query("SELECT * FROM draft_photos WHERE draftId = :draftId ORDER BY id")
     fun observeForDraft(draftId: Long): Flow<List<DraftPhotoEntity>>

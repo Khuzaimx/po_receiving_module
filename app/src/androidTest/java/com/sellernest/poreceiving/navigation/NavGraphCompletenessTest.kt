@@ -40,7 +40,7 @@ class NavGraphCompletenessTest {
         Routes.allSpecRoutes.forEach { route ->
             val concreteRoute = route
                 .replace("{poId}", "1")
-                .replace("{lineId}", "1")
+                .replace("{purchaseOrderItemId}", "1")
                 .replace("{draftId}", "1")
 
             composeTestRule.runOnUiThread {

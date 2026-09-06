@@ -24,4 +24,14 @@ interface DraftSerialDao {
 
     @Query("SELECT * FROM draft_serials WHERE draftLineId = :draftLineId ORDER BY id")
     fun observeForLine(draftLineId: Long): Flow<List<DraftSerialEntity>>
+
+    /** M5.1: backs the Review-and-Submit totals -- the whole draft's captured
+     *  serial count, not any one line's. */
+    @Query(
+        """
+        SELECT COUNT(*) FROM draft_serials
+        WHERE draftLineId IN (SELECT id FROM draft_lines WHERE draftId = :draftId)
+        """,
+    )
+    suspend fun getTotalCountForDraft(draftId: Long): Int
 }
