@@ -16,12 +16,14 @@ import com.sellernest.poreceiving.ui.screens.accessgate.MobileAccessDisabledScre
 import com.sellernest.poreceiving.ui.screens.binconfirmation.BinConfirmationScreen
 import com.sellernest.poreceiving.ui.screens.damagecapture.DamageCaptureScreen
 import com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen
+import com.sellernest.poreceiving.ui.screens.receipthistory.ReceiptHistoryScreen
 import com.sellernest.poreceiving.ui.screens.reconcile.ReconcileScreen
 import com.sellernest.poreceiving.ui.screens.reviewsubmit.ReviewSubmitScreen
 import com.sellernest.poreceiving.ui.screens.scantocount.ScanToCountScreen
 import com.sellernest.poreceiving.ui.screens.serialcapture.SerialCaptureScreen
 import com.sellernest.poreceiving.ui.screens.signin.SignInDestination
 import com.sellernest.poreceiving.ui.screens.signin.SignInScreen
+import com.sellernest.poreceiving.ui.screens.submissionqueue.SubmissionQueueScreen
 import com.sellernest.poreceiving.ui.screens.warehouseselection.WarehouseSelectionScreen
 import com.sellernest.poreceiving.ui.screens.workqueue.WorkQueueScreen
 
@@ -142,8 +144,11 @@ fun PoReceivingNavGraph(
         draftScopedRoute(Routes.REVIEW_AND_SUBMIT) {
             ReviewSubmitScreen(
                 onSubmitted = {
-                    navController.navigate(Routes.WORK_QUEUE) {
-                        popUpTo(Routes.WORK_QUEUE) { inclusive = true }
+                    // M5.2: the receipt isn't posted yet, only queued -- land
+                    // on the screen that shows exactly that, not the work
+                    // queue as though nothing were still in flight.
+                    navController.navigate(Routes.SUBMISSION_QUEUE) {
+                        popUpTo(Routes.WORK_QUEUE)
                     }
                 },
                 onSaveAndExit = {
@@ -154,8 +159,12 @@ fun PoReceivingNavGraph(
             )
         }
 
-        composable(Routes.SUBMISSION_QUEUE) { ScreenStub("SUBMISSIONS", "§7.12") }
-        composable(Routes.RECEIPT_HISTORY) { ScreenStub("MY RECEIPTS", "§7.13") }
+        composable(Routes.SUBMISSION_QUEUE) {
+            SubmissionQueueScreen(
+                onNavigateToReviewAndSubmit = { draftId -> navController.navigate(Routes.reviewAndSubmit(draftId)) },
+            )
+        }
+        composable(Routes.RECEIPT_HISTORY) { ReceiptHistoryScreen() }
 
         composable(Routes.COMPONENT_GALLERY) { ComponentGalleryScreen() }
         composable(Routes.EXAMPLE_COUNTER) { ExampleCounterScreen() }

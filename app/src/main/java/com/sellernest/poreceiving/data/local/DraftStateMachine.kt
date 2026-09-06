@@ -18,7 +18,11 @@ object DraftStateMachine {
         DraftState.RECONCILE to setOf(DraftState.REVIEW, DraftState.VARIANCE_CAPTURE),
         DraftState.VARIANCE_CAPTURE to setOf(DraftState.REVIEW),
         DraftState.REVIEW to setOf(DraftState.QUEUED),
-        DraftState.QUEUED to setOf(DraftState.QUEUED, DraftState.RECEIPTED),
+        // M5.5: a FAILED submission (a QueuedSubmissionEntity status, not a
+        // DraftState -- this state machine has no notion of "failed") can
+        // still be DISCARDED, with confirmation naming the PO, same as an
+        // abandoned PO_OPEN draft.
+        DraftState.QUEUED to setOf(DraftState.QUEUED, DraftState.RECEIPTED, DraftState.DISCARDED),
         DraftState.RECEIPTED to emptySet(),
         DraftState.DISCARDED to emptySet(),
     )

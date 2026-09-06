@@ -12,6 +12,7 @@ import com.sellernest.poreceiving.network.ApiService
 import com.sellernest.poreceiving.network.dto.ScanMatchedLine
 import com.sellernest.poreceiving.ui.screens.poheader.FakeDraftLineDao
 import com.sellernest.poreceiving.ui.screens.warehouseselection.FakeDraftDao
+import com.sellernest.poreceiving.work.submit.FakeSubmitScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -97,11 +98,14 @@ class ReviewSubmitViewModelTest {
         server.shutdown()
     }
 
+    private val submitScheduler = FakeSubmitScheduler()
+
     private fun viewModel() = ReviewSubmitViewModel(
         savedStateHandle = SavedStateHandle(mapOf("draftId" to draftId)),
         apiService = apiService,
         json = json,
         draftRepository = draftRepository,
+        submitScheduler = submitScheduler,
     )
 
     private val poDetailBody = """
@@ -141,6 +145,17 @@ class ReviewSubmitViewModelTest {
         assertTrue(vm.state.value.submitted)
         assertNull(vm.state.value.blockingMessage)
         assertEquals(DraftState.QUEUED, draftDao.getById(draftId)?.state)
+        assertEquals(listOf(draftId), submitScheduler.enqueuedDraftIds)
+    }
+
+    @Test
+    fun `the missing quantity is persisted to the draft line so a retry sends the same payload`() = runTest {
+        server.enqueue(MockResponse().setBody(poDetailBody))
+        server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
+
+        viewModel() // load() alone persists it -- no SUBMIT tap needed
+
+        assertEquals(2, draftLineDao.getByPurchaseOrderItem(draftId, 1)?.missingQuantity)
     }
 
     @Test

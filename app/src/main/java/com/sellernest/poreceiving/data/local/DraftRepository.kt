@@ -13,6 +13,8 @@ import com.sellernest.poreceiving.data.local.entities.DraftSerialEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.data.local.entities.QueuedSubmissionEntity
 import com.sellernest.poreceiving.data.local.entities.SubmissionStatus
+import com.sellernest.poreceiving.network.dto.ReceiveRequest
+import com.sellernest.poreceiving.network.dto.ReceiveRequestLine
 import com.sellernest.poreceiving.network.dto.ScanMatchedLine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -126,10 +128,16 @@ class DraftRepository @Inject constructor(
         draftLineDao.update(line.copy(damagedQuantity = damagedQuantity.coerceIn(0, line.countedQuantity)))
     }
 
-    /** §6.3: PO_OPEN -> DISCARDED. The confirmation UI naming the PO is the
-     *  caller's job (M3.7); this only performs the transition itself. */
+    /**
+     * §6.3: PO_OPEN -> DISCARDED, or (M5.5) QUEUED -> DISCARDED for a failed
+     * submission. The confirmation UI naming the PO is the caller's job
+     * (M3.7); this only performs the transition and clears any queue row so
+     * a discarded draft doesn't keep showing as FAILED on the submissions
+     * screen forever.
+     */
     suspend fun discard(draftId: Long) {
         transition(draftId, DraftState.DISCARDED)
+        queuedSubmissionDao.deleteForDraft(draftId)
     }
 
     /** M4.2: "Reasons and notes persist to the draft immediately." */
@@ -144,6 +152,19 @@ class DraftRepository @Inject constructor(
     }
 
     fun observePhotos(draftId: Long): Flow<List<DraftPhotoEntity>> = draftPhotoDao.observeForDraft(draftId)
+
+    /** M6.1: the upload worker's own lookup -- it only knows a photo's row id. */
+    suspend fun getPhoto(photoId: Long): DraftPhotoEntity? = draftPhotoDao.getById(photoId)
+
+    /** M6.1: resolves [DraftPhotoEntity.draftLineId] back to the purchase-order-item id the upload payload needs. */
+    suspend fun getLine(draftLineId: Long): DraftLineEntity? = draftLineDao.getById(draftLineId)
+
+    /** M6.1/M4.4: "the file is deleted only after uploaded becomes true" -- the
+     *  worker deletes the local file itself once this call returns. */
+    suspend fun markPhotoUploaded(photoId: Long, remotePhotoId: Long) {
+        val photo = draftPhotoDao.getById(photoId) ?: return
+        draftPhotoDao.update(photo.copy(uploaded = true, remotePhotoId = remotePhotoId))
+    }
 
     /**
      * M4.4. [purchaseOrderItemId] null makes this a receipt-level photo; a
@@ -233,6 +254,92 @@ class DraftRepository @Inject constructor(
                 enqueuedAtEpochMillis = System.currentTimeMillis(),
             ),
         )
+    }
+
+    /**
+     * M5.1: persists the one figure Review-and-Submit derives from an
+     * expected quantity (the reconcile response's negative delta), so §9.4's
+     * `quantity_missing` reads back identically on every submit attempt --
+     * see [DraftLineEntity.missingQuantity]'s doc for why this can't simply
+     * be re-derived fresh on each retry.
+     */
+    suspend fun setMissingQuantity(draftId: Long, purchaseOrderItemId: Long, missingQuantity: Int) {
+        val line = draftLineDao.getByPurchaseOrderItem(draftId, purchaseOrderItemId) ?: return
+        draftLineDao.update(line.copy(missingQuantity = missingQuantity.coerceAtLeast(0)))
+    }
+
+    suspend fun getSubmission(draftId: Long): QueuedSubmissionEntity? = queuedSubmissionDao.getForDraft(draftId)
+
+    /** M5.5: backs the submissions screen's live list. */
+    fun observeSubmissions(): Flow<List<QueuedSubmissionEntity>> = queuedSubmissionDao.observeAll()
+
+    /**
+     * M5.3/§9.4: assembles the exact submit payload from the draft's own
+     * locally-known fields -- [DraftEntity.idempotencyKey] verbatim (M3.6),
+     * good/damaged/missing per line, and every captured serial. Returns null
+     * only if the draft itself has vanished (it should not have, but a
+     * background worker must never assume).
+     */
+    suspend fun buildReceiveRequest(draftId: Long): ReceiveRequest? {
+        val draft = draftDao.getById(draftId) ?: return null
+        val lines = draftLineDao.observeForDraft(draftId).first()
+        val requestLines = lines.map { line ->
+            ReceiveRequestLine(
+                purchaseOrderItemId = line.purchaseOrderItemId,
+                quantityReceived = line.countedQuantity - line.damagedQuantity,
+                quantityDamaged = line.damagedQuantity,
+                quantityMissing = line.missingQuantity,
+                varianceReasonId = line.varianceReasonId,
+                varianceNote = line.varianceNote,
+                serials = draftSerialDao.observeForLine(line.id).first().map { it.serialValue },
+            )
+        }
+        return ReceiveRequest(
+            idempotencyKey = draft.idempotencyKey,
+            notes = draft.notes,
+            binId = draft.binId,
+            lines = requestLines,
+        )
+    }
+
+    /** M5.2: the worker's first action on every attempt, so the submissions
+     *  screen's "Attempt N" reflects reality even mid-call. */
+    suspend fun markSubmissionSending(draftId: Long, attemptCount: Int) {
+        val submission = queuedSubmissionDao.getForDraft(draftId) ?: return
+        queuedSubmissionDao.update(submission.copy(status = SubmissionStatus.SENDING, attemptCount = attemptCount))
+    }
+
+    /**
+     * M5.3/M5.4: a 2xx `/receive/` response, `replayed` or not, is always
+     * success from the draft's point of view -- the receipt exists exactly
+     * once either way (§10: "duplicate submission... the app shows one
+     * receipt, never two"). [failedLinesJson] is carried through verbatim
+     * even on success, since "partial failure is normal" (M5.3).
+     */
+    suspend fun markSubmissionReceipted(draftId: Long, receiptId: Long, failedLinesJson: String?) {
+        val submission = queuedSubmissionDao.getForDraft(draftId) ?: return
+        queuedSubmissionDao.update(
+            submission.copy(
+                status = SubmissionStatus.RECEIPTED,
+                receiptId = receiptId,
+                lastError = null,
+                failedLinesJson = failedLinesJson,
+            ),
+        )
+        transition(draftId, DraftState.RECEIPTED)
+    }
+
+    /**
+     * M5.3/M5.4: a terminal failure (a rejected payload, or a 409 conflict --
+     * never a transient network error, which the worker retries instead of
+     * calling this). The draft itself stays QUEUED, not some "failed" state
+     * this machine doesn't model: M5.5's EDIT & RESUBMIT corrects fields in
+     * place and re-queues (QUEUED -> QUEUED is already legal), and DISCARD
+     * is QUEUED -> DISCARDED.
+     */
+    suspend fun markSubmissionFailed(draftId: Long, error: String) {
+        val submission = queuedSubmissionDao.getForDraft(draftId) ?: return
+        queuedSubmissionDao.update(submission.copy(status = SubmissionStatus.FAILED, lastError = error))
     }
 
     /**

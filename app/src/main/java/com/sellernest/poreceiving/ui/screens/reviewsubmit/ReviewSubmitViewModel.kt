@@ -9,6 +9,7 @@ import com.sellernest.poreceiving.network.ApiService
 import com.sellernest.poreceiving.network.dto.ReconcileRequest
 import com.sellernest.poreceiving.network.dto.ReconcileRequestLine
 import com.sellernest.poreceiving.network.safeApiCall
+import com.sellernest.poreceiving.work.submit.SubmitScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -17,12 +18,14 @@ import javax.inject.Inject
 
 /**
  * §7.11, §9.4. [missingQuantity][ReviewSubmitUiState.missingQuantity] is
- * re-derived by posting the current counts to `/reconcile/` again -- the same
- * endpoint [com.sellernest.poreceiving.ui.screens.reconcile.ReconcileViewModel]
- * uses -- rather than persisting an expected quantity onto the draft locally.
- * The §9.4 receive payload itself (M5.2, not built here) is assembled from
- * local counts alone; this call exists only to display a number this screen
- * has no other way to know.
+ * derived by posting the current counts to `/reconcile/` -- the same endpoint
+ * [com.sellernest.poreceiving.ui.screens.reconcile.ReconcileViewModel] uses --
+ * and, unlike the rest of this screen's totals, is also persisted onto each
+ * line via [DraftRepository.setMissingQuantity] so the §9.4 submit payload
+ * [com.sellernest.poreceiving.work.submit.SubmitDraftUseCase] later builds
+ * reads back the identical value on every retry (see that field's doc).
+ * SUBMIT itself only queues the draft and hands it to [submitScheduler] --
+ * actually calling `/receive/` happens in the background, in that use case.
  */
 @HiltViewModel
 class ReviewSubmitViewModel @Inject constructor(
@@ -30,6 +33,7 @@ class ReviewSubmitViewModel @Inject constructor(
     private val apiService: ApiService,
     private val json: Json,
     private val draftRepository: DraftRepository,
+    private val submitScheduler: SubmitScheduler,
 ) : BaseViewModel<ReviewSubmitUiState, ReviewSubmitUiEvent>(ReviewSubmitUiState()) {
 
     private val draftId: Long = checkNotNull(savedStateHandle["draftId"])
@@ -97,6 +101,13 @@ class ReviewSubmitViewModel @Inject constructor(
                     varianceLines = varianceLines,
                 )
             }
+            // Persisted now, once, from this one reconcile response, so every
+            // submit attempt -- the first and every retry -- reads back the
+            // same §9.4 quantity_missing (see DraftLineEntity.missingQuantity's doc).
+            reconcileResult.body.lines.forEach { line ->
+                val missing = if (line.delta < 0) -line.delta else 0
+                draftRepository.setMissingQuantity(draftId, line.purchaseOrderItemId, missing)
+            }
         }
 
         updateState { it.copy(loading = false) }
@@ -129,6 +140,7 @@ class ReviewSubmitViewModel @Inject constructor(
         }
 
         draftRepository.queueForSubmission(draftId)
+        submitScheduler.enqueue(draftId)
         updateState { it.copy(submitted = true) }
     }
 

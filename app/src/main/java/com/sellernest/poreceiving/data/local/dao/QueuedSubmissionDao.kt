@@ -21,6 +21,11 @@ interface QueuedSubmissionDao {
     @Query("SELECT * FROM queued_submissions WHERE draftId = :draftId")
     suspend fun getForDraft(draftId: Long): QueuedSubmissionEntity?
 
+    /** M5.5: DISCARD on a failed submission removes its queue row too, so a
+     *  discarded draft doesn't keep showing as FAILED on this screen forever. */
+    @Query("DELETE FROM queued_submissions WHERE draftId = :draftId")
+    suspend fun deleteForDraft(draftId: Long)
+
     @Query("SELECT * FROM queued_submissions ORDER BY enqueuedAtEpochMillis DESC")
     fun observeAll(): Flow<List<QueuedSubmissionEntity>>
 

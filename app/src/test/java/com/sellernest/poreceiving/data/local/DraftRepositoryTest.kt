@@ -295,4 +295,120 @@ class DraftRepositoryTest {
         val submission = queuedSubmissionDao.getForDraft(draft.id)
         assertEquals(SubmissionStatus.PENDING, submission?.status)
     }
+
+    @Test
+    fun `setMissingQuantity persists the M4_1 reconcile delta so a retry reads back the same value`() = runTest {
+        val draftLineDao = FakeDraftLineDao()
+        val repo = repository(draftLineDao = draftLineDao)
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        repo.recordScan(draft.id, matchedLine)
+
+        repo.setMissingQuantity(draft.id, matchedLine.purchaseOrderItemId, 2)
+
+        assertEquals(2, draftLineDao.getByPurchaseOrderItem(draft.id, matchedLine.purchaseOrderItemId)?.missingQuantity)
+    }
+
+    @Test
+    fun `buildReceiveRequest assembles the exact submit payload from the draft's own fields`() = runTest {
+        val repo = repository()
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        val line = repo.recordScan(draft.id, matchedLine)
+        repo.recordScan(draft.id, matchedLine) // countedQuantity = 2
+        repo.setDamagedQuantity(draft.id, matchedLine.purchaseOrderItemId, 1)
+        repo.setMissingQuantity(draft.id, matchedLine.purchaseOrderItemId, 3)
+        repo.setVarianceReason(draft.id, matchedLine.purchaseOrderItemId, reasonId = 7, note = "Corner crushed")
+        repo.setBin(draft.id, 55)
+        repo.setNotes(draft.id, "Dock 3")
+        repo.addSerial(line.id, "SN-1")
+
+        val request = repo.buildReceiveRequest(draft.id)
+
+        assertEquals(draft.idempotencyKey, request?.idempotencyKey)
+        assertEquals("Dock 3", request?.notes)
+        assertEquals(55L, request?.binId)
+        val requestLine = request?.lines?.single()
+        assertEquals(1, requestLine?.quantityReceived) // 2 counted - 1 damaged
+        assertEquals(1, requestLine?.quantityDamaged)
+        assertEquals(3, requestLine?.quantityMissing)
+        assertEquals(7L, requestLine?.varianceReasonId)
+        assertEquals("Corner crushed", requestLine?.varianceNote)
+        assertEquals(listOf("SN-1"), requestLine?.serials)
+    }
+
+    @Test
+    fun `markSubmissionReceipted transitions QUEUED to RECEIPTED`() = runTest {
+        val draftDao = FakeDraftDao()
+        val queuedSubmissionDao = FakeQueuedSubmissionDao()
+        val repo = repository(draftDao = draftDao, queuedSubmissionDao = queuedSubmissionDao)
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        repo.recordScan(draft.id, matchedLine)
+        repo.commitCount(draft.id)
+        repo.completeReconciliation(draft.id)
+        repo.queueForSubmission(draft.id)
+
+        repo.markSubmissionReceipted(draft.id, receiptId = 4412, failedLinesJson = null)
+
+        assertEquals(DraftState.RECEIPTED, draftDao.getById(draft.id)?.state)
+        assertEquals(4412L, queuedSubmissionDao.getForDraft(draft.id)?.receiptId)
+    }
+
+    @Test
+    fun `markSubmissionFailed leaves the draft QUEUED, not some state this machine doesn't model`() = runTest {
+        val draftDao = FakeDraftDao()
+        val queuedSubmissionDao = FakeQueuedSubmissionDao()
+        val repo = repository(draftDao = draftDao, queuedSubmissionDao = queuedSubmissionDao)
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        repo.recordScan(draft.id, matchedLine)
+        repo.commitCount(draft.id)
+        repo.completeReconciliation(draft.id)
+        repo.queueForSubmission(draft.id)
+
+        repo.markSubmissionFailed(draft.id, "Over-receipt requires permission.")
+
+        assertEquals(DraftState.QUEUED, draftDao.getById(draft.id)?.state)
+        assertEquals(SubmissionStatus.FAILED, queuedSubmissionDao.getForDraft(draft.id)?.status)
+        assertEquals("Over-receipt requires permission.", queuedSubmissionDao.getForDraft(draft.id)?.lastError)
+    }
+
+    @Test
+    fun `discard on a failed submission is legal and clears its queue row`() = runTest {
+        val draftDao = FakeDraftDao()
+        val queuedSubmissionDao = FakeQueuedSubmissionDao()
+        val repo = repository(draftDao = draftDao, queuedSubmissionDao = queuedSubmissionDao)
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        repo.recordScan(draft.id, matchedLine)
+        repo.commitCount(draft.id)
+        repo.completeReconciliation(draft.id)
+        repo.queueForSubmission(draft.id)
+        repo.markSubmissionFailed(draft.id, "Over-receipt requires permission.")
+
+        repo.discard(draft.id)
+
+        assertEquals(DraftState.DISCARDED, draftDao.getById(draft.id)?.state)
+        assertEquals(null, queuedSubmissionDao.getForDraft(draft.id))
+    }
+
+    @Test
+    fun `a photo attached with no line is a receipt-level photo`() = runTest {
+        val repo = repository()
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+
+        val photo = repo.addPhoto(draft.id, purchaseOrderItemId = null, localFilePath = "/tmp/a.jpg")
+
+        assertEquals(null, photo.draftLineId)
+        assertEquals(null, repo.getPhoto(photo.id)?.draftLineId)
+    }
+
+    @Test
+    fun `markPhotoUploaded flips uploaded and records the remote photo id`() = runTest {
+        val repo = repository()
+        val draft = repo.openPurchaseOrder(10482, "PO-10482", 2)
+        val photo = repo.addPhoto(draft.id, purchaseOrderItemId = null, localFilePath = "/tmp/a.jpg")
+
+        repo.markPhotoUploaded(photo.id, remotePhotoId = 91)
+
+        val persisted = repo.getPhoto(photo.id)
+        assertEquals(true, persisted?.uploaded)
+        assertEquals(91L, persisted?.remotePhotoId)
+    }
 }

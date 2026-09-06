@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sellernest.poreceiving.network.dto.PurchaseOrderSummary
+import com.sellernest.poreceiving.scan.compose.KeyboardWedgeCapture
 import com.sellernest.poreceiving.scan.compose.ScanFocusEffect
 import com.sellernest.poreceiving.ui.components.StateBadge
 import com.sellernest.poreceiving.ui.theme.Spacing
@@ -38,9 +39,15 @@ import com.sellernest.poreceiving.ui.theme.StateTone
 fun WorkQueueScreen(onPoSelected: (Long) -> Unit, viewModel: WorkQueueViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
 
-    // M2.7: this screen owns scan focus so a scanned PO barcode opens it
+    // M2.7/M7.2: this screen owns scan focus so a scanned PO barcode opens it
     // directly, by hardware trigger, with the camera never opened.
+    // KeyboardWedgeCapture is what makes that true for a device in
+    // keystroke-wedge output mode, not only intent-broadcast mode -- its
+    // hidden field yields focus to the visible search field below whenever
+    // the receiver taps into it, the same documented trade-off
+    // ScanToCountScreen's manual-quantity dialog already makes.
     ScanFocusEffect { code, _ -> viewModel.onEvent(WorkQueueUiEvent.PoBarcodeScanned(code)) }
+    KeyboardWedgeCapture()
 
     LaunchedEffect(state.navigateToPoId) {
         state.navigateToPoId?.let { poId ->

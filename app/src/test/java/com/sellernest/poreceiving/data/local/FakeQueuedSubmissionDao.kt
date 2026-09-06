@@ -21,6 +21,10 @@ internal class FakeQueuedSubmissionDao : QueuedSubmissionDao {
     override suspend fun getForDraft(draftId: Long): QueuedSubmissionEntity? =
         submissionsFlow.value.firstOrNull { it.draftId == draftId }
 
+    override suspend fun deleteForDraft(draftId: Long) {
+        submissionsFlow.value = submissionsFlow.value.filterNot { it.draftId == draftId }
+    }
+
     override fun observeAll(): Flow<List<QueuedSubmissionEntity>> = submissionsFlow
 
     override fun observePendingCount(): Flow<Int> = submissionsFlow.map { all ->
