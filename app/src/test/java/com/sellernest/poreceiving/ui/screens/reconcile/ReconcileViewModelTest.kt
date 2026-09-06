@@ -3,6 +3,9 @@ package com.sellernest.poreceiving.ui.screens.reconcile
 import androidx.lifecycle.SavedStateHandle
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.sellernest.poreceiving.data.local.DraftRepository
+import com.sellernest.poreceiving.data.local.FakeDraftPhotoDao
+import com.sellernest.poreceiving.data.local.FakeDraftSerialDao
+import com.sellernest.poreceiving.data.local.FakeQueuedSubmissionDao
 import com.sellernest.poreceiving.data.local.entities.DraftLineEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.network.ApiService
@@ -61,7 +64,7 @@ class ReconcileViewModelTest {
         apiService = retrofit.create(ApiService::class.java)
         draftDao = FakeDraftDao()
         draftLineDao = FakeDraftLineDao()
-        draftRepository = DraftRepository(draftDao, draftLineDao)
+        draftRepository = DraftRepository(draftDao, draftLineDao, FakeDraftPhotoDao(), FakeDraftSerialDao(), FakeQueuedSubmissionDao())
 
         val draft = draftRepository.openPurchaseOrder(10482, "PO-10482", warehouseId = 2)
         draftId = draft.id
@@ -79,6 +82,14 @@ class ReconcileViewModelTest {
         json = json,
         draftRepository = draftRepository,
     )
+
+    private fun validPoDetailBody(enforceBins: Boolean = false) = """
+        {
+          "id": 10482, "number": "PO-10482", "vendor_name": "Globex Supply Co.",
+          "warehouse": {"id": 2, "name": "DC-2", "enforce_bins": $enforceBins},
+          "blind_count": true, "lines": []
+        }
+    """.trimIndent()
 
     private val twoVarianceOneMatchBody = """
         {
@@ -99,6 +110,7 @@ class ReconcileViewModelTest {
 
     @Test
     fun `variance lines sort above matching lines`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
         server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
         val vm = viewModel()
 
@@ -109,6 +121,7 @@ class ReconcileViewModelTest {
 
     @Test
     fun `CONTINUE is disabled while any variance line has no reason`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
         server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
         val vm = viewModel()
 
@@ -117,6 +130,7 @@ class ReconcileViewModelTest {
 
     @Test
     fun `an unpermitted over-receipt blocks CONTINUE even with all reasons chosen`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
         server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
         val vm = viewModel()
 
@@ -130,6 +144,7 @@ class ReconcileViewModelTest {
 
     @Test
     fun `choosing reasons for every permitted variance enables CONTINUE`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -154,6 +169,7 @@ class ReconcileViewModelTest {
 
     @Test
     fun `a chosen reason persists to the draft line immediately`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
         server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
         viewModel()
         // Seed a draft line matching purchaseOrderItemId 2 so persistence has
@@ -162,6 +178,8 @@ class ReconcileViewModelTest {
         draftLineDao.insert(
             DraftLineEntity(draftId = draftId, purchaseOrderItemId = 2, sku = "UNDER-1", name = "Under", countedQuantity = 6),
         )
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
         val vm = viewModel()
 
         vm.onEvent(ReconcileUiEvent.ReasonSelected(2, 7))
@@ -173,12 +191,9 @@ class ReconcileViewModelTest {
     }
 
     @Test
-    fun `CONTINUE transitions the draft to REVIEW and signals navigation`() = runTest {
-        server.enqueue(
-            MockResponse().setBody(
-                """{"lines": [], "variance_reasons": []}""",
-            ),
-        )
+    fun `CONTINUE transitions the draft to REVIEW and signals navigation to Review when bins aren't enforced`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody(enforceBins = false)))
+        server.enqueue(MockResponse().setBody("""{"lines": [], "variance_reasons": []}"""))
         // Force PO_OPEN -> COUNTING (as a real scan would) before committing --
         // commitCount only accepts a transition out of COUNTING.
         draftRepository.setLineQuantity(draftId, purchaseOrderItemId = 999, quantity = 0)
@@ -189,5 +204,41 @@ class ReconcileViewModelTest {
 
         assertEquals(DraftState.REVIEW, draftDao.getById(draftId)?.state)
         assertEquals(draftId, vm.state.value.navigateToReviewDraftId)
+        assertEquals(null, vm.state.value.navigateToBinConfirmationDraftId)
+    }
+
+    @Test
+    fun `CONTINUE signals navigation to Bin Confirmation when the warehouse enforces bins`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody(enforceBins = true)))
+        server.enqueue(MockResponse().setBody("""{"lines": [], "variance_reasons": []}"""))
+        draftRepository.setLineQuantity(draftId, purchaseOrderItemId = 999, quantity = 0)
+        draftRepository.commitCount(draftId)
+        val vm = viewModel()
+
+        vm.onEvent(ReconcileUiEvent.ContinueTapped)
+
+        assertEquals(DraftState.REVIEW, draftDao.getById(draftId)?.state)
+        assertEquals(draftId, vm.state.value.navigateToBinConfirmationDraftId)
+        assertEquals(null, vm.state.value.navigateToReviewDraftId)
+    }
+
+    @Test
+    fun `a line requiring a serial number is flagged for the SERIALS action`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        server.enqueue(MockResponse().setBody(twoVarianceOneMatchBody))
+        draftLineDao.insert(
+            DraftLineEntity(
+                draftId = draftId, purchaseOrderItemId = 2, sku = "UNDER-1", name = "Under",
+                countedQuantity = 6, requiresSerialNumber = true,
+            ),
+        )
+        draftLineDao.insert(
+            DraftLineEntity(draftId = draftId, purchaseOrderItemId = 3, sku = "OVER-1", name = "Over, blocked", countedQuantity = 5),
+        )
+
+        val vm = viewModel()
+
+        assertEquals(true, vm.state.value.requiresSerialByItem[2])
+        assertEquals(false, vm.state.value.requiresSerialByItem[3])
     }
 }

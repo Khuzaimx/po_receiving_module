@@ -2,6 +2,7 @@ package com.sellernest.poreceiving.ui.screens.reconcile
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,9 +40,21 @@ import com.sellernest.poreceiving.ui.theme.StateTone
 
 /** §7.7, §6.1, §6.3: the only screen an expected quantity is ever revealed on. */
 @Composable
-fun ReconcileScreen(onNavigateToReview: (draftId: Long) -> Unit, viewModel: ReconcileViewModel = hiltViewModel()) {
+fun ReconcileScreen(
+    onNavigateToDamageCapture: (purchaseOrderItemId: Long) -> Unit,
+    onNavigateToSerialCapture: (purchaseOrderItemId: Long) -> Unit,
+    onNavigateToBinConfirmation: (draftId: Long) -> Unit,
+    onNavigateToReview: (draftId: Long) -> Unit,
+    viewModel: ReconcileViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsState()
 
+    LaunchedEffect(state.navigateToBinConfirmationDraftId) {
+        state.navigateToBinConfirmationDraftId?.let { draftId ->
+            onNavigateToBinConfirmation(draftId)
+            viewModel.onEvent(ReconcileUiEvent.NavigationHandled)
+        }
+    }
     LaunchedEffect(state.navigateToReviewDraftId) {
         state.navigateToReviewDraftId?.let { draftId ->
             onNavigateToReview(draftId)
@@ -52,6 +66,8 @@ fun ReconcileScreen(onNavigateToReview: (draftId: Long) -> Unit, viewModel: Reco
         state = state,
         onReasonSelected = { itemId, reasonId -> viewModel.onEvent(ReconcileUiEvent.ReasonSelected(itemId, reasonId)) },
         onNoteChanged = { itemId, note -> viewModel.onEvent(ReconcileUiEvent.NoteChanged(itemId, note)) },
+        onDamageCaptureRequested = onNavigateToDamageCapture,
+        onSerialCaptureRequested = onNavigateToSerialCapture,
         onContinueTapped = { viewModel.onEvent(ReconcileUiEvent.ContinueTapped) },
     )
 }
@@ -61,6 +77,8 @@ internal fun ReconcileContent(
     state: ReconcileUiState,
     onReasonSelected: (Long, Long) -> Unit,
     onNoteChanged: (Long, String) -> Unit,
+    onDamageCaptureRequested: (purchaseOrderItemId: Long) -> Unit,
+    onSerialCaptureRequested: (purchaseOrderItemId: Long) -> Unit,
     onContinueTapped: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -101,13 +119,21 @@ internal fun ReconcileContent(
                     reasons = state.varianceReasons,
                     selectedReasonId = state.selectedReasonIdByLine[line.purchaseOrderItemId],
                     note = state.noteByLine[line.purchaseOrderItemId].orEmpty(),
+                    requiresSerialNumber = state.requiresSerialByItem[line.purchaseOrderItemId] == true,
                     onReasonSelected = { reasonId -> onReasonSelected(line.purchaseOrderItemId, reasonId) },
                     onNoteChanged = { note -> onNoteChanged(line.purchaseOrderItemId, note) },
+                    onDamageCaptureRequested = { onDamageCaptureRequested(line.purchaseOrderItemId) },
+                    onSerialCaptureRequested = { onSerialCaptureRequested(line.purchaseOrderItemId) },
                 )
                 HorizontalDivider()
             }
             items(items = state.matchingLines, key = { it.purchaseOrderItemId }) { line ->
-                MatchingLineRow(line)
+                MatchingLineRow(
+                    line = line,
+                    requiresSerialNumber = state.requiresSerialByItem[line.purchaseOrderItemId] == true,
+                    onDamageCaptureRequested = { onDamageCaptureRequested(line.purchaseOrderItemId) },
+                    onSerialCaptureRequested = { onSerialCaptureRequested(line.purchaseOrderItemId) },
+                )
                 HorizontalDivider()
             }
         }
@@ -138,8 +164,11 @@ private fun VarianceLineRow(
     reasons: List<VarianceReason>,
     selectedReasonId: Long?,
     note: String,
+    requiresSerialNumber: Boolean,
     onReasonSelected: (Long) -> Unit,
     onNoteChanged: (String) -> Unit,
+    onDamageCaptureRequested: () -> Unit,
+    onSerialCaptureRequested: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(Spacing.screenPadding)) {
         StateBadge(tone = StateTone.Variance, icon = Icons.Filled.Warning, label = line.sku)
@@ -163,6 +192,29 @@ private fun VarianceLineRow(
             onValueChange = onNoteChanged,
             placeholder = { Text("Note (optional)") },
         )
+
+        LineCaptureActions(
+            requiresSerialNumber = requiresSerialNumber,
+            onDamageCaptureRequested = onDamageCaptureRequested,
+            onSerialCaptureRequested = onSerialCaptureRequested,
+        )
+    }
+}
+
+/** §7.8/§7.9: reachable from every line, matching or variance -- damage and
+ *  serial capture are both about what was *counted*, not about whether the
+ *  count happened to match an expected quantity. */
+@Composable
+private fun LineCaptureActions(
+    requiresSerialNumber: Boolean,
+    onDamageCaptureRequested: () -> Unit,
+    onSerialCaptureRequested: () -> Unit,
+) {
+    Row {
+        TextButton(onClick = onDamageCaptureRequested) { Text("DAMAGE") }
+        if (requiresSerialNumber) {
+            TextButton(onClick = onSerialCaptureRequested) { Text("SERIALS") }
+        }
     }
 }
 
@@ -196,11 +248,22 @@ private fun ReasonDropdown(reasons: List<VarianceReason>, selectedReasonId: Long
 }
 
 @Composable
-private fun MatchingLineRow(line: ReconcileResponseLine) {
-    StateBadge(
-        modifier = Modifier.fillMaxWidth().padding(Spacing.screenPadding),
-        tone = StateTone.Confirmed,
-        icon = Icons.Filled.CheckCircle,
-        label = "${line.sku}  Expected ${line.quantityExpected}  Counted ${line.quantityCounted}",
-    )
+private fun MatchingLineRow(
+    line: ReconcileResponseLine,
+    requiresSerialNumber: Boolean,
+    onDamageCaptureRequested: () -> Unit,
+    onSerialCaptureRequested: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(Spacing.screenPadding)) {
+        StateBadge(
+            tone = StateTone.Confirmed,
+            icon = Icons.Filled.CheckCircle,
+            label = "${line.sku}  Expected ${line.quantityExpected}  Counted ${line.quantityCounted}",
+        )
+        LineCaptureActions(
+            requiresSerialNumber = requiresSerialNumber,
+            onDamageCaptureRequested = onDamageCaptureRequested,
+            onSerialCaptureRequested = onSerialCaptureRequested,
+        )
+    }
 }

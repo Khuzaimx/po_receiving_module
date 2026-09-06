@@ -28,6 +28,7 @@ class ReconcileViewModel @Inject constructor(
 ) : BaseViewModel<ReconcileUiState, ReconcileUiEvent>(ReconcileUiState()) {
 
     private val draftId: Long = checkNotNull(savedStateHandle["draftId"])
+    private var warehouseEnforcesBins = false
 
     init {
         scope.launch { loadReconciliation() }
@@ -50,11 +51,18 @@ class ReconcileViewModel @Inject constructor(
             ReconcileUiEvent.ContinueTapped -> scope.launch {
                 if (currentState.canContinue) {
                     draftRepository.completeReconciliation(draftId)
-                    updateState { it.copy(navigateToReviewDraftId = draftId) }
+                    // M4.6: "With enforce_bins: false, the screen is skipped" --
+                    // skipped by never navigating to it in the first place.
+                    if (warehouseEnforcesBins) {
+                        updateState { it.copy(navigateToBinConfirmationDraftId = draftId) }
+                    } else {
+                        updateState { it.copy(navigateToReviewDraftId = draftId) }
+                    }
                 }
             }
 
-            ReconcileUiEvent.NavigationHandled -> updateState { it.copy(navigateToReviewDraftId = null) }
+            ReconcileUiEvent.NavigationHandled ->
+                updateState { it.copy(navigateToBinConfirmationDraftId = null, navigateToReviewDraftId = null) }
         }
     }
 
@@ -74,6 +82,13 @@ class ReconcileViewModel @Inject constructor(
         updateState { it.copy(purchaseOrderNumber = draft.purchaseOrderNumber) }
 
         val lines = draftRepository.observeLines(draftId).first()
+        updateState { it.copy(requiresSerialByItem = lines.associate { line -> line.purchaseOrderItemId to line.requiresSerialNumber }) }
+
+        val detailResult = safeApiCall(json) { apiService.getPurchaseOrderDetail(draft.purchaseOrderId) }
+        if (detailResult is ApiResult.Success) {
+            warehouseEnforcesBins = detailResult.body.warehouse.enforceBins
+        }
+
         val request = ReconcileRequest(
             lines = lines.map { ReconcileRequestLine(it.purchaseOrderItemId, it.countedQuantity) },
         )

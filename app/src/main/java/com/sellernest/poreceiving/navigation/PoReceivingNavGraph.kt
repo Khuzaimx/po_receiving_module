@@ -13,17 +13,21 @@ import com.sellernest.poreceiving.core.mvvm.example.ExampleCounterScreen
 import com.sellernest.poreceiving.ui.components.ComponentGalleryScreen
 import com.sellernest.poreceiving.ui.screens.accessgate.DeviceRevokedScreen
 import com.sellernest.poreceiving.ui.screens.accessgate.MobileAccessDisabledScreen
+import com.sellernest.poreceiving.ui.screens.binconfirmation.BinConfirmationScreen
+import com.sellernest.poreceiving.ui.screens.damagecapture.DamageCaptureScreen
 import com.sellernest.poreceiving.ui.screens.poheader.PoHeaderScreen
 import com.sellernest.poreceiving.ui.screens.reconcile.ReconcileScreen
+import com.sellernest.poreceiving.ui.screens.reviewsubmit.ReviewSubmitScreen
 import com.sellernest.poreceiving.ui.screens.scantocount.ScanToCountScreen
+import com.sellernest.poreceiving.ui.screens.serialcapture.SerialCaptureScreen
 import com.sellernest.poreceiving.ui.screens.signin.SignInDestination
 import com.sellernest.poreceiving.ui.screens.signin.SignInScreen
 import com.sellernest.poreceiving.ui.screens.warehouseselection.WarehouseSelectionScreen
 import com.sellernest.poreceiving.ui.screens.workqueue.WorkQueueScreen
 
 private val poIdArg = navArgument("poId") { type = NavType.LongType }
-private val lineIdArg = navArgument("lineId") { type = NavType.LongType }
 private val draftIdArg = navArgument("draftId") { type = NavType.LongType }
+private val purchaseOrderItemIdArg = navArgument("purchaseOrderItemId") { type = NavType.LongType }
 
 /**
  * The full §7 screen graph. Every route resolves today; real screens replace
@@ -95,18 +99,60 @@ fun PoReceivingNavGraph(
 
         draftScopedRoute(Routes.RECONCILE) { draftId ->
             ReconcileScreen(
-                onNavigateToReview = { reviewDraftId -> navController.navigate(Routes.reviewAndSubmit(reviewDraftId)) },
+                onNavigateToDamageCapture = { purchaseOrderItemId ->
+                    navController.navigate(Routes.damageCapture(draftId, purchaseOrderItemId))
+                },
+                onNavigateToSerialCapture = { purchaseOrderItemId ->
+                    navController.navigate(Routes.serialCapture(draftId, purchaseOrderItemId))
+                },
+                onNavigateToBinConfirmation = { binDraftId ->
+                    navController.navigate(Routes.binConfirmation(binDraftId)) {
+                        // Reconciliation has already committed RECONCILE -> REVIEW
+                        // by the time this fires; there is nothing left on this
+                        // screen to back out to.
+                        popUpTo(Routes.reconcile(draftId)) { inclusive = true }
+                    }
+                },
+                onNavigateToReview = { reviewDraftId ->
+                    navController.navigate(Routes.reviewAndSubmit(reviewDraftId)) {
+                        popUpTo(Routes.reconcile(draftId)) { inclusive = true }
+                    }
+                },
             )
         }
 
-        poAndLineScopedRoute(Routes.DAMAGE_CAPTURE) { poId, lineId ->
-            ScreenStub("DAMAGE — PO $poId / LINE $lineId", "§7.8")
+        draftAndItemScopedRoute(Routes.DAMAGE_CAPTURE) { _, _ ->
+            DamageCaptureScreen(onNavigateBack = { navController.popBackStack() })
         }
-        poAndLineScopedRoute(Routes.SERIAL_CAPTURE) { poId, lineId ->
-            ScreenStub("SERIALS — PO $poId / LINE $lineId", "§7.9")
+
+        draftAndItemScopedRoute(Routes.SERIAL_CAPTURE) { _, _ ->
+            SerialCaptureScreen(onNavigateBack = { navController.popBackStack() })
         }
-        poScopedRoute(Routes.BIN_CONFIRMATION) { poId -> ScreenStub("PUT AWAY — PO $poId", "§7.10") }
-        draftScopedRoute(Routes.REVIEW_AND_SUBMIT) { draftId -> ScreenStub("REVIEW — draft $draftId", "§7.11") }
+
+        draftScopedRoute(Routes.BIN_CONFIRMATION) { draftId ->
+            BinConfirmationScreen(
+                onNavigateToReview = { reviewDraftId ->
+                    navController.navigate(Routes.reviewAndSubmit(reviewDraftId)) {
+                        popUpTo(Routes.binConfirmation(draftId)) { inclusive = true }
+                    }
+                },
+            )
+        }
+
+        draftScopedRoute(Routes.REVIEW_AND_SUBMIT) {
+            ReviewSubmitScreen(
+                onSubmitted = {
+                    navController.navigate(Routes.WORK_QUEUE) {
+                        popUpTo(Routes.WORK_QUEUE) { inclusive = true }
+                    }
+                },
+                onSaveAndExit = {
+                    navController.navigate(Routes.WORK_QUEUE) {
+                        popUpTo(Routes.WORK_QUEUE) { inclusive = true }
+                    }
+                },
+            )
+        }
 
         composable(Routes.SUBMISSION_QUEUE) { ScreenStub("SUBMISSIONS", "§7.12") }
         composable(Routes.RECEIPT_HISTORY) { ScreenStub("MY RECEIPTS", "§7.13") }
@@ -134,12 +180,12 @@ private fun NavGraphBuilder.draftScopedRoute(
     }
 }
 
-private fun NavGraphBuilder.poAndLineScopedRoute(
+private fun NavGraphBuilder.draftAndItemScopedRoute(
     route: String,
-    content: @Composable (poId: Long, lineId: Long) -> Unit,
+    content: @Composable (draftId: Long, purchaseOrderItemId: Long) -> Unit,
 ) {
-    composable(route, arguments = listOf(poIdArg, lineIdArg)) { backStackEntry ->
+    composable(route, arguments = listOf(draftIdArg, purchaseOrderItemIdArg)) { backStackEntry ->
         val args = backStackEntry.arguments
-        content(args?.getLong("poId") ?: -1L, args?.getLong("lineId") ?: -1L)
+        content(args?.getLong("draftId") ?: -1L, args?.getLong("purchaseOrderItemId") ?: -1L)
     }
 }

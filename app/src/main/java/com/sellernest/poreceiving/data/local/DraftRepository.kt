@@ -1,12 +1,21 @@
 package com.sellernest.poreceiving.data.local
 
+import android.database.sqlite.SQLiteConstraintException
 import com.sellernest.poreceiving.data.local.dao.DraftDao
 import com.sellernest.poreceiving.data.local.dao.DraftLineDao
+import com.sellernest.poreceiving.data.local.dao.DraftPhotoDao
+import com.sellernest.poreceiving.data.local.dao.DraftSerialDao
+import com.sellernest.poreceiving.data.local.dao.QueuedSubmissionDao
 import com.sellernest.poreceiving.data.local.entities.DraftEntity
 import com.sellernest.poreceiving.data.local.entities.DraftLineEntity
+import com.sellernest.poreceiving.data.local.entities.DraftPhotoEntity
+import com.sellernest.poreceiving.data.local.entities.DraftSerialEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
+import com.sellernest.poreceiving.data.local.entities.QueuedSubmissionEntity
+import com.sellernest.poreceiving.data.local.entities.SubmissionStatus
 import com.sellernest.poreceiving.network.dto.ScanMatchedLine
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +31,9 @@ import javax.inject.Singleton
 class DraftRepository @Inject constructor(
     private val draftDao: DraftDao,
     private val draftLineDao: DraftLineDao,
+    private val draftPhotoDao: DraftPhotoDao,
+    private val draftSerialDao: DraftSerialDao,
+    private val queuedSubmissionDao: QueuedSubmissionDao,
 ) {
 
     /**
@@ -103,6 +115,17 @@ class DraftRepository @Inject constructor(
         transition(draftId, DraftState.RECONCILE)
     }
 
+    /**
+     * M4.3: "GOOD + DAMAGED always equals COUNTED." Clamping the damaged split
+     * to the counted quantity here, the same way [setLineQuantity] clamps
+     * counting to zero, is what makes that invariant hold regardless of which
+     * screen calls this.
+     */
+    suspend fun setDamagedQuantity(draftId: Long, purchaseOrderItemId: Long, damagedQuantity: Int) {
+        val line = draftLineDao.getByPurchaseOrderItem(draftId, purchaseOrderItemId) ?: return
+        draftLineDao.update(line.copy(damagedQuantity = damagedQuantity.coerceIn(0, line.countedQuantity)))
+    }
+
     /** §6.3: PO_OPEN -> DISCARDED. The confirmation UI naming the PO is the
      *  caller's job (M3.7); this only performs the transition itself. */
     suspend fun discard(draftId: Long) {
@@ -118,6 +141,98 @@ class DraftRepository @Inject constructor(
     ) {
         val line = draftLineDao.getByPurchaseOrderItem(draftId, purchaseOrderItemId) ?: return
         draftLineDao.update(line.copy(varianceReasonId = reasonId, varianceNote = note))
+    }
+
+    fun observePhotos(draftId: Long): Flow<List<DraftPhotoEntity>> = draftPhotoDao.observeForDraft(draftId)
+
+    /**
+     * M4.4. [purchaseOrderItemId] null makes this a receipt-level photo; a
+     * non-null value is resolved to the line's own row id, since
+     * [DraftPhotoEntity.draftLineId] is a foreign key to that row, not to
+     * [purchaseOrderItemId] itself.
+     */
+    suspend fun addPhoto(
+        draftId: Long,
+        purchaseOrderItemId: Long?,
+        localFilePath: String,
+        caption: String? = null,
+    ): DraftPhotoEntity {
+        val draftLineId = purchaseOrderItemId?.let { draftLineDao.getByPurchaseOrderItem(draftId, it)?.id }
+        val photo = DraftPhotoEntity(draftId = draftId, draftLineId = draftLineId, localFilePath = localFilePath, caption = caption)
+        val id = draftPhotoDao.insert(photo)
+        return photo.copy(id = id)
+    }
+
+    /** M4.4: "Removing a photo before submit removes it from the queue too." */
+    suspend fun removePhoto(photo: DraftPhotoEntity) {
+        draftPhotoDao.delete(photo)
+    }
+
+    fun observeSerials(draftLineId: Long): Flow<List<DraftSerialEntity>> = draftSerialDao.observeForLine(draftLineId)
+
+    sealed interface AddSerialResult {
+        data class Added(val serial: DraftSerialEntity) : AddSerialResult
+        /** M4.5: "Duplicate serials are rejected... with the conflicting value shown." */
+        data class Duplicate(val conflictingValue: String) : AddSerialResult
+    }
+
+    /**
+     * Checked here first so the common case never round-trips through a
+     * thrown [SQLiteConstraintException]; the `try`/catch is a backstop for
+     * the race between that check and the insert, not the primary path --
+     * [DraftSerialDao.insert]'s unique index is what makes duplicate
+     * rejection actually reliable (§7.9, §10).
+     */
+    suspend fun addSerial(draftLineId: Long, serialValue: String): AddSerialResult {
+        draftSerialDao.observeForLine(draftLineId).first().firstOrNull { it.serialValue == serialValue }?.let {
+            return AddSerialResult.Duplicate(it.serialValue)
+        }
+        return try {
+            val serial = DraftSerialEntity(draftLineId = draftLineId, serialValue = serialValue)
+            val id = draftSerialDao.insert(serial)
+            AddSerialResult.Added(serial.copy(id = id))
+        } catch (e: SQLiteConstraintException) {
+            AddSerialResult.Duplicate(serialValue)
+        }
+    }
+
+    /** M4.5: "Removing a serial re-opens that slot." */
+    suspend fun removeSerial(serial: DraftSerialEntity) {
+        draftSerialDao.delete(serial)
+    }
+
+    /** M5.1: the Review-and-Submit totals' "Serials" figure -- the whole draft, not one line. */
+    suspend fun getTotalSerialCount(draftId: Long): Int = draftSerialDao.getTotalCountForDraft(draftId)
+
+    /** M4.6: populates [DraftEntity.binId], which §9.4's submit payload reads directly. */
+    suspend fun setBin(draftId: Long, binId: Long?) {
+        val draft = draftDao.getById(draftId) ?: return
+        draftDao.update(draft.copy(binId = binId, updatedAtEpochMillis = System.currentTimeMillis()))
+    }
+
+    /** M5.1: the optional receipt-level notes field, persisted immediately like every other draft field. */
+    suspend fun setNotes(draftId: Long, notes: String?) {
+        val draft = draftDao.getById(draftId) ?: return
+        draftDao.update(draft.copy(notes = notes, updatedAtEpochMillis = System.currentTimeMillis()))
+    }
+
+    /**
+     * M5.1: REVIEW -> QUEUED, and a [QueuedSubmissionEntity] row for the
+     * submissions screen and the pending-count status bar to pick up.
+     * Actually sending the receipt over the network -- retries, backoff,
+     * [QueuedSubmissionEntity.workRequestId] -- is the enqueued WorkManager
+     * job's job (M5.2), not this method's; this only marks the draft ready
+     * for that worker to find.
+     */
+    suspend fun queueForSubmission(draftId: Long) {
+        transition(draftId, DraftState.QUEUED)
+        queuedSubmissionDao.upsert(
+            QueuedSubmissionEntity(
+                draftId = draftId,
+                status = SubmissionStatus.PENDING,
+                enqueuedAtEpochMillis = System.currentTimeMillis(),
+            ),
+        )
     }
 
     /**

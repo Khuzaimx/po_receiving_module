@@ -15,7 +15,14 @@ data class ReconcileUiState(
     val varianceReasons: List<VarianceReason> = emptyList(),
     val selectedReasonIdByLine: Map<Long, Long> = emptyMap(),
     val noteByLine: Map<Long, String> = emptyMap(),
+    /** M4.5: which lines to show a SERIALS action for, from the locally-known
+     *  [com.sellernest.poreceiving.data.local.entities.DraftLineEntity.requiresSerialNumber] --
+     *  not part of the reconcile response itself. */
+    val requiresSerialByItem: Map<Long, Boolean> = emptyMap(),
     val errorMessage: String? = null,
+    /** One-shot: CONTINUE routes here when the warehouse enforces bins (M4.6). */
+    val navigateToBinConfirmationDraftId: Long? = null,
+    /** One-shot: CONTINUE routes here otherwise. */
     val navigateToReviewDraftId: Long? = null,
 ) : UiState {
     /** §7.7: "Variances first, matches collapsed below." */

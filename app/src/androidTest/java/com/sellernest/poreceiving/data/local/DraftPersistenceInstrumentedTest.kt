@@ -77,7 +77,13 @@ class DraftPersistenceInstrumentedTest {
     @Test
     fun twentyScansAcrossTenLinesSurviveSimulatedProcessDeathWithCorrectQuantities() = runTest {
         val firstDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
-        val repository = DraftRepository(firstDb.draftDao(), firstDb.draftLineDao())
+        val repository = DraftRepository(
+            firstDb.draftDao(),
+            firstDb.draftLineDao(),
+            firstDb.draftPhotoDao(),
+            firstDb.draftSerialDao(),
+            firstDb.queuedSubmissionDao(),
+        )
 
         val draft = repository.openPurchaseOrder(10482, "PO-10482", warehouseId = 2)
         repeat(10) { index ->

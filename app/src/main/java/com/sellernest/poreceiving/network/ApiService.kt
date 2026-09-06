@@ -1,5 +1,6 @@
 package com.sellernest.poreceiving.network
 
+import com.sellernest.poreceiving.network.dto.BinRef
 import com.sellernest.poreceiving.network.dto.MeResponse
 import com.sellernest.poreceiving.network.dto.PagedResponse
 import com.sellernest.poreceiving.network.dto.PhotoUploadResponse
@@ -87,6 +88,17 @@ interface ApiService {
         @Part("purchase_order_receipt_item") purchaseOrderReceiptItem: Long? = null,
         @Part("caption") caption: String? = null,
     ): Response<PhotoUploadResponse>
+
+    /** M4.6: no exact §9 contract exists for bin lookup; gap-filling design
+     *  mirroring [getWorkQueue]'s optional-warehouse-filter shape, which is
+     *  what lets a scoped-then-unscoped search (§10's cross-warehouse
+     *  rejection) work the same way [com.sellernest.poreceiving.ui.screens.workqueue.WorkQueueViewModel]'s
+     *  PO-barcode scan already does. Confirm against the real backend. */
+    @GET("bins/")
+    suspend fun getBins(
+        @Query("warehouse") warehouseId: Long? = null,
+        @Query("search") search: String? = null,
+    ): Response<PagedResponse<BinRef>>
 
     /** §9.6 */
     @GET("receipts/")
