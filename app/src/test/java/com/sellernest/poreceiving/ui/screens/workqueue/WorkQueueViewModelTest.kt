@@ -82,6 +82,27 @@ class WorkQueueViewModelTest {
         assertEquals(1, server.requestCount) // only /api/me/, never /purchase-orders/
     }
 
+    /**
+     * §11 verification scenario 8: "Sign in as a warehouse-scoped receiver;
+     * confirm POs from other warehouses are absent." The server is the one
+     * that actually filters (§9.1), but that guarantee is worthless if the
+     * app never sends the filter in the first place -- this asserts the
+     * request itself carries the active warehouse, not just that the parsed
+     * response renders correctly.
+     */
+    @Test
+    fun `the work queue request is scoped to the active warehouse`() = runTest {
+        server.enqueue(MockResponse().setBody(meWithReceivingPermission(canReceive = true)))
+        meRepository.refresh()
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+
+        WorkQueueViewModel(apiService, json, meRepository, FakeWarehouseSelectionStorage())
+
+        server.takeRequest() // /api/me/
+        val workQueueRequest: RecordedRequest = server.takeRequest()
+        assertEquals("2", workQueueRequest.requestUrl!!.queryParameter("warehouse"))
+    }
+
     @Test
     fun `results are sorted oldest-due first regardless of server order`() = runTest {
         server.enqueue(MockResponse().setBody(meWithReceivingPermission(canReceive = true)))
