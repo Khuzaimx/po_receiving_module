@@ -29,6 +29,9 @@ internal class FakeDraftPhotoDao : DraftPhotoDao {
         photosFlow.value = photosFlow.value.filterNot { it.id == photo.id }
     }
 
+    override suspend fun getById(photoId: Long): DraftPhotoEntity? =
+        photosFlow.value.firstOrNull { it.id == photoId }
+
     override fun observeForDraft(draftId: Long): Flow<List<DraftPhotoEntity>> =
         photosFlow.map { all -> all.filter { it.draftId == draftId } }
 

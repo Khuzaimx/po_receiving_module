@@ -26,6 +26,7 @@ class DraftStateMachineTest {
         DraftState.REVIEW to DraftState.QUEUED,
         DraftState.QUEUED to DraftState.QUEUED,
         DraftState.QUEUED to DraftState.RECEIPTED,
+        DraftState.QUEUED to DraftState.DISCARDED,
     )
 
     @Test

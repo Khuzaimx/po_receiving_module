@@ -22,6 +22,9 @@ interface DraftPhotoDao {
     @Delete
     suspend fun delete(photo: DraftPhotoEntity)
 
+    @Query("SELECT * FROM draft_photos WHERE id = :photoId")
+    suspend fun getById(photoId: Long): DraftPhotoEntity?
+
     @Query("SELECT * FROM draft_photos WHERE draftId = :draftId ORDER BY id")
     fun observeForDraft(draftId: Long): Flow<List<DraftPhotoEntity>>
 

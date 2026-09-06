@@ -47,7 +47,13 @@ fun PoReceivingRoot(navController: NavHostController = rememberNavController()) 
     }
 
     Scaffold(
-        topBar = { StatusBar() },
+        topBar = {
+            StatusBar(
+                onPendingCountTapped = {
+                    navController.navigate(Routes.SUBMISSION_QUEUE)
+                },
+            )
+        },
     ) { innerPadding ->
         PoReceivingNavGraph(
             navController = navController,

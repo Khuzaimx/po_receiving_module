@@ -1,5 +1,6 @@
 package com.sellernest.poreceiving.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,13 +30,21 @@ import com.sellernest.poreceiving.ui.theme.StateTone
  * rather than being something each screen remembers to include.
  */
 @Composable
-fun StatusBar(modifier: Modifier = Modifier, viewModel: StatusBarViewModel = hiltViewModel()) {
+fun StatusBar(
+    modifier: Modifier = Modifier,
+    onPendingCountTapped: () -> Unit = {},
+    viewModel: StatusBarViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsState()
-    StatusBarContent(state = state, modifier = modifier)
+    StatusBarContent(state = state, onPendingCountTapped = onPendingCountTapped, modifier = modifier)
 }
 
 @Composable
-private fun StatusBarContent(state: StatusBarUiState, modifier: Modifier = Modifier) {
+private fun StatusBarContent(
+    state: StatusBarUiState,
+    onPendingCountTapped: () -> Unit = {},
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .testTag("status_bar")
@@ -53,7 +62,7 @@ private fun StatusBarContent(state: StatusBarUiState, modifier: Modifier = Modif
 
         if (state.pendingSubmissionCount > 0) {
             StateBadge(
-                modifier = Modifier.testTag("status_bar_pending_count"),
+                modifier = Modifier.testTag("status_bar_pending_count").clickable(onClick = onPendingCountTapped),
                 tone = StateTone.Pending,
                 icon = Icons.Filled.CloudUpload,
                 label = "${state.pendingSubmissionCount} queued",

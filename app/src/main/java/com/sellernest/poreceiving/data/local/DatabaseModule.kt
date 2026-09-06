@@ -25,6 +25,7 @@ object DatabaseModule {
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
             // No fallbackToDestructiveMigration(): see the class doc on AppDatabase.
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides

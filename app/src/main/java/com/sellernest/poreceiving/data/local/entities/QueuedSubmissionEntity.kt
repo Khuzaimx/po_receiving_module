@@ -16,7 +16,15 @@ enum class SubmissionStatus {
  * exactly one row per draft; [attemptCount] and [lastError] back the "Attempt 2 -
  * retrying in 8s" and per-line failure display on the submissions screen.
  * [workRequestId] correlates this row with the enqueued unique WorkManager
- * request so a double-tap on SUBMIT cannot create a second one (M5.2).
+ * request so a double-tap on SUBMIT cannot create a second one (M5.2) --
+ * enforced structurally by [com.sellernest.poreceiving.work.submit.SubmitWorkScheduler]'s
+ * deterministic unique work name plus `ExistingWorkPolicy.KEEP`, with this
+ * field kept for display/correlation rather than being load-bearing itself.
+ *
+ * [failedLinesJson] is the verbatim §9.4 `failed` array from the last
+ * `/receive/` response, JSON-encoded (M5.3: "partial failure is normal" --
+ * a successful, RECEIPTED submission can still carry per-line failures that
+ * must survive a process death to keep being shown).
  */
 @Entity(
     tableName = "queued_submissions",
@@ -38,4 +46,5 @@ data class QueuedSubmissionEntity(
     val receiptId: Long? = null,
     val workRequestId: String? = null,
     val enqueuedAtEpochMillis: Long,
+    val failedLinesJson: String? = null,
 )

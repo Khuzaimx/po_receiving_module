@@ -41,6 +41,9 @@ internal class FakeDraftLineDao : DraftLineDao {
     override suspend fun getByPurchaseOrderItem(draftId: Long, purchaseOrderItemId: Long): DraftLineEntity? =
         linesFlow.value.firstOrNull { it.draftId == draftId && it.purchaseOrderItemId == purchaseOrderItemId }
 
+    override suspend fun getById(id: Long): DraftLineEntity? =
+        linesFlow.value.firstOrNull { it.id == id }
+
     override suspend fun getTotalCountedQuantity(draftId: Long): Int =
         linesFlow.value.filter { it.draftId == draftId }.sumOf { it.countedQuantity }
 }

@@ -109,4 +109,46 @@ class DraftPersistenceInstrumentedTest {
 
         secondDb.close()
     }
+
+    /**
+     * §8/M5.6: "Killing the app mid-retry does not lose the queued
+     * submission; a reboot does not either." A [QueuedSubmissionEntity]
+     * row is exactly as much a real Room row as a draft or its lines --
+     * this proves it survives the same simulated process death M3.5's test
+     * above proves for scans.
+     */
+    @Test
+    fun queuedSubmissionSurvivesSimulatedProcessDeath() = runTest {
+        val firstDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+        val repository = DraftRepository(
+            firstDb.draftDao(),
+            firstDb.draftLineDao(),
+            firstDb.draftPhotoDao(),
+            firstDb.draftSerialDao(),
+            firstDb.queuedSubmissionDao(),
+        )
+        val draft = repository.openPurchaseOrder(10482, "PO-10482", warehouseId = 2)
+        repository.recordScan(
+            draft.id,
+            ScanMatchedLine(
+                purchaseOrderItemId = 1, sku = "A", name = "A",
+                quantityAlreadyReceived = 0, requiresSerialNumber = false, fullyReceived = false,
+            ),
+        )
+        repository.commitCount(draft.id)
+        repository.completeReconciliation(draft.id)
+        repository.queueForSubmission(draft.id)
+        repository.markSubmissionSending(draft.id, attemptCount = 2)
+
+        firstDb.close()
+
+        val secondDb = Room.databaseBuilder(context, AppDatabase::class.java, databaseName).build()
+        val reloaded = secondDb.queuedSubmissionDao().getForDraft(draft.id)
+
+        assertNotNull("A queued submission written before 'process death' must be readable after reopening", reloaded)
+        assertEquals(2, reloaded?.attemptCount)
+        assertEquals(DraftState.QUEUED, secondDb.draftDao().getById(draft.id)?.state)
+
+        secondDb.close()
+    }
 }

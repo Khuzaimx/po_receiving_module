@@ -31,7 +31,7 @@ import com.sellernest.poreceiving.data.local.entities.QueuedSubmissionEntity
         DraftPhotoEntity::class,
         QueuedSubmissionEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
