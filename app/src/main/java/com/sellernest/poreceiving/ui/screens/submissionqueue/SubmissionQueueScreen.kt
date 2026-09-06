@@ -147,12 +147,12 @@ private fun SubmissionRow(
 
 @Composable
 private fun rememberCountdownSeconds(targetEpochMillis: Long?): Int? {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(targetEpochMillis) {
         while (targetEpochMillis != null) {
-            now = System.currentTimeMillis()
+            now.longValue = System.currentTimeMillis()
             delay(1_000)
         }
     }
-    return targetEpochMillis?.let { ((it - now) / 1000).toInt().coerceAtLeast(0) }
+    return targetEpochMillis?.let { ((it - now.longValue) / 1000).toInt().coerceAtLeast(0) }
 }
