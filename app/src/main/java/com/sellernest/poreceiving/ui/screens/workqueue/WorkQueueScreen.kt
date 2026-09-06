@@ -21,12 +21,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.sellernest.poreceiving.network.dto.PurchaseOrderSummary
+import com.sellernest.poreceiving.scan.compose.ScanFocusEffect
 import com.sellernest.poreceiving.ui.components.StateBadge
 import com.sellernest.poreceiving.ui.theme.Spacing
 import com.sellernest.poreceiving.ui.theme.StateTone
@@ -35,6 +37,17 @@ import com.sellernest.poreceiving.ui.theme.StateTone
 @Composable
 fun WorkQueueScreen(onPoSelected: (Long) -> Unit, viewModel: WorkQueueViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
+
+    // M2.7: this screen owns scan focus so a scanned PO barcode opens it
+    // directly, by hardware trigger, with the camera never opened.
+    ScanFocusEffect { code, _ -> viewModel.onEvent(WorkQueueUiEvent.PoBarcodeScanned(code)) }
+
+    LaunchedEffect(state.navigateToPoId) {
+        state.navigateToPoId?.let { poId ->
+            onPoSelected(poId)
+            viewModel.onEvent(WorkQueueUiEvent.NavigationHandled)
+        }
+    }
 
     WorkQueueContent(
         state = state,
@@ -84,6 +97,17 @@ internal fun WorkQueueContent(
         )
 
         state.errorMessage?.let { message ->
+            StateBadge(
+                modifier = Modifier.padding(Spacing.screenPadding),
+                tone = StateTone.Error,
+                icon = Icons.Filled.Warning,
+                label = message,
+            )
+        }
+
+        // M2.7: names why a scanned PO barcode didn't open anything --
+        // never a silent no-op.
+        state.scanMessage?.let { message ->
             StateBadge(
                 modifier = Modifier.padding(Spacing.screenPadding),
                 tone = StateTone.Error,

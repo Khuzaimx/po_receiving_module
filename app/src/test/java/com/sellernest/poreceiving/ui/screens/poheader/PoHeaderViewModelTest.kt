@@ -2,10 +2,12 @@ package com.sellernest.poreceiving.ui.screens.poheader
 
 import androidx.lifecycle.SavedStateHandle
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import com.sellernest.poreceiving.data.local.DraftRepository
 import com.sellernest.poreceiving.data.local.entities.DraftEntity
 import com.sellernest.poreceiving.data.local.entities.DraftLineEntity
 import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.network.ApiService
+import com.sellernest.poreceiving.network.dto.ScanMatchedLine
 import com.sellernest.poreceiving.session.SelectedWarehouse
 import com.sellernest.poreceiving.session.WarehouseSelectionStorage
 import com.sellernest.poreceiving.ui.screens.warehouseselection.FakeDraftDao
@@ -76,8 +78,89 @@ class PoHeaderViewModelTest {
             json = json,
             draftDao = draftDao,
             draftLineDao = draftLineDao,
+            draftRepository = DraftRepository(draftDao, draftLineDao),
             warehouseSelectionStorage = warehouseStorage,
         )
+
+    private fun validPoDetailBody(blindCount: Boolean = true) = """
+        {
+          "id": 10482, "number": "PO-10482", "vendor_name": "Globex Supply Co.",
+          "warehouse": {"id": 2, "name": "DC-2", "enforce_bins": true},
+          "blind_count": $blindCount, "lines": []
+        }
+    """.trimIndent()
+
+    @Test
+    fun `tapping START RECEIVING creates a draft in PO_OPEN and navigates to it`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        val vm = viewModel(draftDao)
+
+        vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
+
+        val draftId = vm.state.value.navigateToDraftId
+        assertTrue("Expected a draft id to navigate to", draftId != null)
+        assertEquals(DraftState.PO_OPEN, draftDao.getById(draftId!!)?.state)
+        assertEquals("PO-10482", draftDao.getById(draftId)?.purchaseOrderNumber)
+    }
+
+    @Test
+    fun `tapping START RECEIVING twice resumes the same draft rather than forking`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        val vm = viewModel(draftDao)
+
+        vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
+        val firstDraftId = vm.state.value.navigateToDraftId
+        vm.onEvent(PoHeaderUiEvent.NavigationHandled)
+        vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
+        val secondDraftId = vm.state.value.navigateToDraftId
+
+        assertEquals(firstDraftId, secondDraftId)
+    }
+
+    @Test
+    fun `discard requires confirmation naming the PO and is only offered in PO_OPEN`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        val vm = viewModel(draftDao)
+        vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
+
+        assertTrue(vm.state.value.canDiscardExistingDraft)
+
+        vm.onEvent(PoHeaderUiEvent.DiscardRequested)
+        assertTrue(vm.state.value.showDiscardConfirmation)
+
+        vm.onEvent(PoHeaderUiEvent.DiscardConfirmed)
+
+        assertFalse(vm.state.value.showDiscardConfirmation)
+        assertEquals(null, vm.state.value.existingDraftId)
+    }
+
+    @Test
+    fun `discard is not offered once counting has begun`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        val draftLineDao = FakeDraftLineDao()
+        val vm = viewModel(draftDao, draftLineDao)
+        vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
+        val draftId = requireNotNull(vm.state.value.navigateToDraftId)
+
+        // Simulate a scan having happened via the same repository this
+        // ViewModel uses, moving the draft to COUNTING.
+        DraftRepository(draftDao, draftLineDao).recordScan(
+            draftId,
+            ScanMatchedLine(
+                purchaseOrderItemId = 1, sku = "A", name = "A",
+                quantityAlreadyReceived = 0, requiresSerialNumber = false, fullyReceived = false,
+            ),
+        )
+        vm.onEvent(PoHeaderUiEvent.NavigationHandled)
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        vm.onEvent(PoHeaderUiEvent.RetryRequested)
+
+        assertFalse(vm.state.value.canDiscardExistingDraft)
+    }
 
     @Test
     fun `blind count true never exposes a per-line quantity and shows the total only when present`() = runTest {

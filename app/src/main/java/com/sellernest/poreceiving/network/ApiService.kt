@@ -8,6 +8,8 @@ import com.sellernest.poreceiving.network.dto.PurchaseOrderSummary
 import com.sellernest.poreceiving.network.dto.ReceiptSummary
 import com.sellernest.poreceiving.network.dto.ReceiveRequest
 import com.sellernest.poreceiving.network.dto.ReceiveResponse
+import com.sellernest.poreceiving.network.dto.ReconcileRequest
+import com.sellernest.poreceiving.network.dto.ReconcileResponse
 import com.sellernest.poreceiving.network.dto.ResolveScanRequest
 import com.sellernest.poreceiving.network.dto.ScanResolution
 import com.sellernest.poreceiving.network.dto.VoidRequest
@@ -66,6 +68,15 @@ interface ApiService {
         @Path("id") purchaseOrderId: Long,
         @Body request: ReceiveRequest,
     ): Response<ReceiveResponse>
+
+    /** §7.7/M4.1: reveals expected quantities -- only ever called from the
+     *  explicit commit transition, never before. Not in the literal §9
+     *  contract; see [ReconcileRequest]'s doc. */
+    @POST("purchase-orders/{id}/reconcile/")
+    suspend fun reconcile(
+        @Path("id") purchaseOrderId: Long,
+        @Body request: ReconcileRequest,
+    ): Response<ReconcileResponse>
 
     /** §9.5 — multipart; `file` is required, the other two parts are optional. */
     @Multipart

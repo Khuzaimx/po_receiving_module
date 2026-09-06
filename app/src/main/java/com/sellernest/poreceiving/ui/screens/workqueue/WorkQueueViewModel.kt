@@ -3,6 +3,7 @@ package com.sellernest.poreceiving.ui.screens.workqueue
 import com.sellernest.poreceiving.core.mvvm.BaseViewModel
 import com.sellernest.poreceiving.network.ApiResult
 import com.sellernest.poreceiving.network.ApiService
+import com.sellernest.poreceiving.network.dto.PagedResponse
 import com.sellernest.poreceiving.network.dto.PurchaseOrderSummary
 import com.sellernest.poreceiving.network.safeApiCall
 import com.sellernest.poreceiving.session.MeRepository
@@ -39,6 +40,10 @@ class WorkQueueViewModel @Inject constructor(
             }
 
             WorkQueueUiEvent.RefreshRequested -> scope.launch { refresh() }
+
+            is WorkQueueUiEvent.PoBarcodeScanned -> scope.launch { handlePoBarcodeScan(event.code) }
+            WorkQueueUiEvent.NavigationHandled -> updateState { it.copy(navigateToPoId = null) }
+            WorkQueueUiEvent.ScanMessageDismissed -> updateState { it.copy(scanMessage = null) }
         }
     }
 
@@ -65,6 +70,42 @@ class WorkQueueViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * M2.7: "Exactly one match opens the PO header immediately. No match, or
+     * a match outside the receiver's permitted warehouses, shows an
+     * explanatory message naming the scanned value -- never a silent no-op."
+     * Searches the active warehouse first; only if that comes up empty does
+     * it search without a warehouse filter, purely to give a specific reason
+     * (the PO's real warehouse) rather than a generic "not found."
+     */
+    private suspend fun handlePoBarcodeScan(code: String) {
+        val warehouseId = warehouseSelectionStorage.current()?.warehouseId
+        val scopedResult = safeApiCall(json) { apiService.getWorkQueue(warehouseId = warehouseId, search = code) }
+        val scopedMatch = scopedResult.exactMatch(code)
+
+        if (scopedMatch != null) {
+            updateState { it.copy(navigateToPoId = scopedMatch.id, scanMessage = null) }
+            return
+        }
+
+        val unscopedResult = safeApiCall(json) { apiService.getWorkQueue(search = code) }
+        val unscopedMatch = unscopedResult.exactMatch(code)
+
+        val message = when {
+            unscopedMatch != null ->
+                "$code belongs to ${unscopedMatch.warehouse.name}, not your active warehouse."
+
+            scopedResult !is ApiResult.Success && unscopedResult !is ApiResult.Success ->
+                "Couldn't look up \"$code\". Check your connection and try again."
+
+            else -> "No receivable PO found matching \"$code\"."
+        }
+        updateState { it.copy(scanMessage = message) }
+    }
+
+    private fun ApiResult<PagedResponse<PurchaseOrderSummary>>.exactMatch(code: String): PurchaseOrderSummary? =
+        (this as? ApiResult.Success)?.body?.results?.firstOrNull { it.number.equals(code, ignoreCase = true) }
 
     /** §7.3: "Oldest-due first." Sorted client-side so the ordering holds
      *  regardless of what order the server happens to return results in;

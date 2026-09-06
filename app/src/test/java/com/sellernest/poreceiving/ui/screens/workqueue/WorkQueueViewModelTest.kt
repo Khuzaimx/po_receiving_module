@@ -149,6 +149,68 @@ class WorkQueueViewModelTest {
         assertEquals("Globex", url.queryParameter("search"))
     }
 
+    @Test
+    fun `scanning a PO barcode that matches in this warehouse navigates directly to it`() = runTest {
+        server.enqueue(MockResponse().setBody(meWithReceivingPermission(canReceive = true)))
+        meRepository.refresh()
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        val viewModel = WorkQueueViewModel(apiService, json, meRepository, FakeWarehouseSelectionStorage())
+
+        server.enqueue(
+            MockResponse().setBody(
+                """{ "count": 1, "next": null, "previous": null, "results": [
+                  {"id": 10482, "number": "PO-10482", "vendor_name": "Globex",
+                   "warehouse": {"id": 2, "name": "DC-2", "enforce_bins": true},
+                   "line_count": 1, "status": "OPEN"}
+                ]}""",
+            ),
+        )
+        viewModel.onEvent(WorkQueueUiEvent.PoBarcodeScanned("PO-10482"))
+
+        assertEquals(10482L, viewModel.state.value.navigateToPoId)
+        assertEquals(null, viewModel.state.value.scanMessage)
+    }
+
+    @Test
+    fun `scanning a PO barcode belonging to another warehouse names that warehouse`() = runTest {
+        server.enqueue(MockResponse().setBody(meWithReceivingPermission(canReceive = true)))
+        meRepository.refresh()
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        val viewModel = WorkQueueViewModel(apiService, json, meRepository, FakeWarehouseSelectionStorage())
+
+        // First (scoped) lookup: no match in this warehouse.
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        // Second (unscoped) lookup: it exists, but in a different warehouse.
+        server.enqueue(
+            MockResponse().setBody(
+                """{ "count": 1, "next": null, "previous": null, "results": [
+                  {"id": 999, "number": "PO-9999", "vendor_name": "Initech",
+                   "warehouse": {"id": 5, "name": "DC-5", "enforce_bins": false},
+                   "line_count": 1, "status": "OPEN"}
+                ]}""",
+            ),
+        )
+        viewModel.onEvent(WorkQueueUiEvent.PoBarcodeScanned("PO-9999"))
+
+        assertEquals(null, viewModel.state.value.navigateToPoId)
+        assertEquals("PO-9999 belongs to DC-5, not your active warehouse.", viewModel.state.value.scanMessage)
+    }
+
+    @Test
+    fun `scanning a value matching nothing at all shows a named not-found message`() = runTest {
+        server.enqueue(MockResponse().setBody(meWithReceivingPermission(canReceive = true)))
+        meRepository.refresh()
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        val viewModel = WorkQueueViewModel(apiService, json, meRepository, FakeWarehouseSelectionStorage())
+
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        server.enqueue(MockResponse().setBody("""{"count": 0, "next": null, "previous": null, "results": []}"""))
+        viewModel.onEvent(WorkQueueUiEvent.PoBarcodeScanned("GARBAGE123"))
+
+        assertEquals(null, viewModel.state.value.navigateToPoId)
+        assertEquals("No receivable PO found matching \"GARBAGE123\".", viewModel.state.value.scanMessage)
+    }
+
     private class FakeWarehouseSelectionStorage : WarehouseSelectionStorage {
         override suspend fun save(selection: SelectedWarehouse) {}
         override suspend fun current(): SelectedWarehouse? = SelectedWarehouse("acme", 2)

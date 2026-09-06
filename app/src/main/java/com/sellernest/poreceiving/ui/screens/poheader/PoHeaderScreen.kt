@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -22,18 +25,24 @@ import com.sellernest.poreceiving.ui.theme.StateTone
 
 /** §7.4, §9.2, §6.2. */
 @Composable
-fun PoHeaderScreen(
-    onStartReceiving: () -> Unit,
-    onResumeDraft: () -> Unit,
-    viewModel: PoHeaderViewModel = hiltViewModel(),
-) {
+fun PoHeaderScreen(onNavigateToScanToCount: (draftId: Long) -> Unit, viewModel: PoHeaderViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsState()
+
+    LaunchedEffect(state.navigateToDraftId) {
+        state.navigateToDraftId?.let { draftId ->
+            onNavigateToScanToCount(draftId)
+            viewModel.onEvent(PoHeaderUiEvent.NavigationHandled)
+        }
+    }
 
     PoHeaderContent(
         state = state,
         onRetryTapped = { viewModel.onEvent(PoHeaderUiEvent.RetryRequested) },
-        onStartReceiving = onStartReceiving,
-        onResumeDraft = onResumeDraft,
+        onStartReceivingTapped = { viewModel.onEvent(PoHeaderUiEvent.StartReceivingTapped) },
+        onResumeDraftTapped = { viewModel.onEvent(PoHeaderUiEvent.ResumeDraftTapped) },
+        onDiscardRequested = { viewModel.onEvent(PoHeaderUiEvent.DiscardRequested) },
+        onDiscardConfirmed = { viewModel.onEvent(PoHeaderUiEvent.DiscardConfirmed) },
+        onDiscardCancelled = { viewModel.onEvent(PoHeaderUiEvent.DiscardCancelled) },
     )
 }
 
@@ -41,8 +50,11 @@ fun PoHeaderScreen(
 internal fun PoHeaderContent(
     state: PoHeaderUiState,
     onRetryTapped: () -> Unit,
-    onStartReceiving: () -> Unit,
-    onResumeDraft: () -> Unit,
+    onStartReceivingTapped: () -> Unit,
+    onResumeDraftTapped: () -> Unit,
+    onDiscardRequested: () -> Unit,
+    onDiscardConfirmed: () -> Unit,
+    onDiscardCancelled: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -84,10 +96,32 @@ internal fun PoHeaderContent(
             )
         }
 
-        PrimaryButton(text = "START RECEIVING", onClick = onStartReceiving)
+        PrimaryButton(text = "START RECEIVING", onClick = onStartReceivingTapped)
 
         state.existingDraftScannedCount?.let { scannedCount ->
-            PrimaryButton(text = "RESUME DRAFT ($scannedCount scanned)", onClick = onResumeDraft)
+            PrimaryButton(text = "RESUME DRAFT ($scannedCount scanned)", onClick = onResumeDraftTapped)
+        }
+
+        // §6.3/M3.7: only offered while the draft is still in PO_OPEN --
+        // once counting has begun, discard is no longer a legal transition.
+        if (state.canDiscardExistingDraft) {
+            TextButton(onClick = onDiscardRequested) {
+                Text("DISCARD DRAFT")
+            }
+        }
+
+        if (state.showDiscardConfirmation) {
+            AlertDialog(
+                onDismissRequest = onDiscardCancelled,
+                title = { Text("Discard draft?") },
+                text = { Text("This discards the draft for ${detail.number}. This cannot be undone.") },
+                confirmButton = {
+                    TextButton(onClick = onDiscardConfirmed) { Text("DISCARD") }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDiscardCancelled) { Text("CANCEL") }
+                },
+            )
         }
     }
 }
