@@ -1,12 +1,6 @@
 Purchase order receiving module for sellernest. 
 
-## Design language
 
-An industrial tool, not a consumer app: high-contrast single light theme (no
-dark mode), 48–56 dp touch targets, colour used only for state and always
-paired with an icon and a text label. See `ui/theme` and
-`ui/components/ComponentGalleryScreen` for the full rule set and a live
-reference of every state.
 
 ## Project structure
 
