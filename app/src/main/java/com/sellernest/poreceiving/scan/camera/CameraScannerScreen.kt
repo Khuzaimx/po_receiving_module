@@ -126,6 +126,7 @@ private fun CameraPreviewWithScanning(onClose: () -> Unit) {
                 .build(),
         )
     }
+    val barcodeDetector = remember { EdgeTriggeredBarcodeDetector() }
 
     var camera by remember { mutableStateOf<Camera?>(null) }
     var torchOn by remember { mutableStateOf(false) }
@@ -140,7 +141,7 @@ private fun CameraPreviewWithScanning(onClose: () -> Unit) {
             .also { analysisUseCase ->
                 analysisUseCase.setAnalyzer(analysisExecutor) { imageProxy ->
                     analyzeFrameForBarcode(barcodeScanner, imageProxy) { code ->
-                        dispatcher.dispatch(code, ScanSource.CAMERA)
+                        barcodeDetector.onFrameResult(code)?.let { dispatcher.dispatch(it, ScanSource.CAMERA) }
                     }
                 }
             }

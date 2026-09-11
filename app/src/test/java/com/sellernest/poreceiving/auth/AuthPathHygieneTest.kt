@@ -56,7 +56,7 @@ class AuthPathHygieneTest {
                 val text = file.readText()
                 text.contains("GrantTypeValues.PASSWORD") ||
                     text.contains("\"password\"") ||
-                    Regex("grant_type[\"']?\s*[:=]\s*[\"']password").containsMatchIn(text)
+                    Regex("""grant_type["']?\s*[:=]\s*["']password""").containsMatchIn(text)
             }
             .map { it.path }
 

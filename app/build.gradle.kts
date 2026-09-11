@@ -41,8 +41,10 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "API_BASE_URL", "\"https://staging-api.example.com/api/mobile/receiving/\"")
-            buildConfigField("String", "OAUTH_ISSUER", "\"https://staging-auth.example.com/realms/sellernest\"")
+            // Local dummy backend for on-device testing without a real Keycloak/API
+            // (tools/mockserver/MockServer.java), reached via `adb reverse tcp:8080 tcp:8080`.
+            buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8080/api/mobile/receiving/\"")
+            buildConfigField("String", "OAUTH_ISSUER", "\"http://127.0.0.1:8080\"")
             buildConfigField("String", "OAUTH_CLIENT_ID", "\"po-receiving-android\"")
         }
         release {

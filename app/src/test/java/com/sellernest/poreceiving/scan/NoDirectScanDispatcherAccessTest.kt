@@ -22,7 +22,7 @@ class NoDirectScanDispatcherAccessTest {
 
         val offenders = mainRoot.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
-            .filterNot { it.path.replace('\', '/').contains("/scan/") }
+            .filterNot { it.path.replace('\\', '/').contains("/scan/") }
             .filter { file -> callPattern.containsMatchIn(file.readText()) }
             .map { it.relativeTo(mainRoot).path }
             .toList()

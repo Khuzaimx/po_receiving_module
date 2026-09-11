@@ -101,7 +101,7 @@ class ScopeComplianceAuditTest {
             val text = file.readText()
             val hasPullToRefresh = text.contains("PullToRefreshBox") || text.contains("SwipeRefresh")
             hasPullToRefresh && !text.contains("IconButton")
-        }.map { it.name }
+        }.map { it.name }.toList()
         assertTrue("Found pull-to-refresh with no adjacent explicit refresh control: $offenders", offenders.isEmpty())
     }
 

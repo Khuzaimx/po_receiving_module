@@ -1,5 +1,7 @@
 package com.sellernest.poreceiving.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
@@ -40,7 +42,18 @@ fun PoReceivingNavGraph(
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier,
 ) {
-    NavHost(navController = navController, startDestination = Routes.SIGN_IN, modifier = modifier) {
+    NavHost(
+        navController = navController,
+        startDestination = Routes.SIGN_IN,
+        modifier = modifier,
+        // §3.1: "No decorative motion... or shared-element transitions."
+        // Navigation-Compose's own default is a sliding crossfade between
+        // destinations; every screen swap here is an instant cut instead.
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
+    ) {
         composable(Routes.SIGN_IN) {
             SignInScreen(
                 onNavigate = { destination ->
