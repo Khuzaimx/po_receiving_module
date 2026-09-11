@@ -17,6 +17,7 @@ import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
+import javax.inject.Provider
 
 /**
  * M1.3 acceptance criterion: "Every outbound request carries... X-Active-Org;
@@ -76,7 +77,7 @@ class MeBackedActiveOrgProviderTest {
         )
         repository.refresh()
 
-        val provider = MeBackedActiveOrgProvider(repository)
+        val provider = MeBackedActiveOrgProvider(Provider { repository })
         val client = OkHttpClient.Builder()
             .addInterceptor(ActiveOrgInterceptor(provider))
             .build()
@@ -109,7 +110,7 @@ class MeBackedActiveOrgProviderTest {
 
         // One provider, one interceptor, one client -- built once, exactly as
         // the real DI graph builds them as app-scoped singletons.
-        val provider = MeBackedActiveOrgProvider(repository)
+        val provider = MeBackedActiveOrgProvider(Provider { repository })
         val client = OkHttpClient.Builder().addInterceptor(ActiveOrgInterceptor(provider)).build()
 
         targetServer.enqueue(MockResponse().setBody("{}"))
@@ -125,7 +126,7 @@ class MeBackedActiveOrgProviderTest {
 
     @Test
     fun `X-Active-Org is absent before any session has been resolved`() = runTest {
-        val provider = MeBackedActiveOrgProvider(repository)
+        val provider = MeBackedActiveOrgProvider(Provider { repository })
         val client = OkHttpClient.Builder()
             .addInterceptor(ActiveOrgInterceptor(provider))
             .build()
