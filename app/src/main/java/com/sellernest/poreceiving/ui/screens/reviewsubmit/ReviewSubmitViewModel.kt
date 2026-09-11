@@ -62,6 +62,8 @@ class ReviewSubmitViewModel @Inject constructor(
         val draft = draftRepository.getDraft(draftId) ?: return
         val lines = draftRepository.observeLines(draftId).first()
 
+        val photoCount = draftRepository.observePhotos(draftId).first().size
+        val serialCount = draftRepository.getTotalSerialCount(draftId)
         updateState {
             it.copy(
                 purchaseOrderNumber = draft.purchaseOrderNumber,
@@ -69,8 +71,8 @@ class ReviewSubmitViewModel @Inject constructor(
                 lineCount = lines.size,
                 goodQuantity = lines.sumOf { line -> line.countedQuantity - line.damagedQuantity },
                 damagedQuantity = lines.sumOf { line -> line.damagedQuantity },
-                photoCount = draftRepository.observePhotos(draftId).first().size,
-                serialCount = draftRepository.getTotalSerialCount(draftId),
+                photoCount = photoCount,
+                serialCount = serialCount,
             )
         }
 

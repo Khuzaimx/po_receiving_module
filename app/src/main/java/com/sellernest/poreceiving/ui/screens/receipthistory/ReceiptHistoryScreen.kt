@@ -168,15 +168,15 @@ private fun ReceiptRow(receipt: ReceiptSummary, onVoidRequested: () -> Unit) {
  */
 @Composable
 private fun rememberRemainingVoidLabel(voidAvailableUntil: String?): String? {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val now = remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(voidAvailableUntil) {
         while (voidAvailableUntil != null) {
-            now = System.currentTimeMillis()
+            now.longValue = System.currentTimeMillis()
             delay(30_000)
         }
     }
     val until = voidAvailableUntil?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return null
-    val nowInstant = Instant.ofEpochMilli(now)
+    val nowInstant = Instant.ofEpochMilli(now.longValue)
     if (!until.isAfter(nowInstant)) return null
     val minutesRemaining = ChronoUnit.MINUTES.between(nowInstant, until)
     val hours = minutesRemaining / 60
