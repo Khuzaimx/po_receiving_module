@@ -11,9 +11,9 @@ import org.junit.Test
 /**
  * Requirements §3.1: "Minimum 48 dp, preferred 56 dp for primary actions."
  *
- * Covers interactive controls only — [StateBadge] is informational (no `onClick`)
- * and is deliberately not asserted here; touch-target minimums apply to things a
- * receiver taps.
+ * Covers interactive controls only — [StateBadge] itself is informational (no
+ * `onClick`) everywhere except [StatusBarContent]'s pending-submission-count
+ * badge, which is a real tap target and is asserted below.
  *
  * Instrumented (not a plain JVM unit test) because it asserts real measured layout
  * size, which needs an actual layout pass. Requires a connected device or emulator
@@ -33,5 +33,16 @@ class TouchTargetTest {
         }
 
         composeTestRule.onNodeWithText("COMMIT COUNT").assertHeightIsAtLeast(56.dp)
+    }
+
+    @Test
+    fun statusBarPendingCountBadgeMeetsMinimumTouchTarget() {
+        composeTestRule.setContent {
+            PoReceivingTheme {
+                StatusBarContent(state = StatusBarUiState(pendingSubmissionCount = 3), onPendingCountTapped = {})
+            }
+        }
+
+        composeTestRule.onNodeWithText("3 queued").assertHeightIsAtLeast(48.dp)
     }
 }

@@ -27,6 +27,10 @@ data class ReviewSubmitUiState(
     val blockingMessage: String? = null,
     val submitted: Boolean = false,
     val savedAndExited: Boolean = false,
+    /** §9.4: the `/reconcile/` call this screen re-derives [missingQuantity] and
+     *  its variance-reason check from failed -- SUBMIT must stay blocked rather
+     *  than silently trusting a zero/empty result, see [ReviewSubmitViewModel]. */
+    val reconcileUnavailable: Boolean = false,
 ) : UiState
 
 sealed interface ReviewSubmitUiEvent : UiEvent {
@@ -36,4 +40,5 @@ sealed interface ReviewSubmitUiEvent : UiEvent {
     data object SubmitTapped : ReviewSubmitUiEvent
     data object SaveAndExitTapped : ReviewSubmitUiEvent
     data object BlockingMessageDismissed : ReviewSubmitUiEvent
+    data object RetryReconcileTapped : ReviewSubmitUiEvent
 }

@@ -54,6 +54,7 @@ fun ReviewSubmitScreen(
         onSubmit = { viewModel.onEvent(ReviewSubmitUiEvent.SubmitTapped) },
         onSaveAndExit = { viewModel.onEvent(ReviewSubmitUiEvent.SaveAndExitTapped) },
         onBlockingMessageDismissed = { viewModel.onEvent(ReviewSubmitUiEvent.BlockingMessageDismissed) },
+        onRetryReconcileTapped = { viewModel.onEvent(ReviewSubmitUiEvent.RetryReconcileTapped) },
     )
 }
 
@@ -66,6 +67,7 @@ internal fun ReviewSubmitContent(
     onSubmit: () -> Unit,
     onSaveAndExit: () -> Unit,
     onBlockingMessageDismissed: () -> Unit,
+    onRetryReconcileTapped: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -112,6 +114,18 @@ internal fun ReviewSubmitContent(
                 icon = Icons.Filled.Warning,
                 label = message,
             )
+        }
+
+        if (state.reconcileUnavailable) {
+            StateBadge(
+                modifier = Modifier.padding(Spacing.screenPadding),
+                tone = StateTone.Error,
+                icon = Icons.Filled.Warning,
+                label = "Couldn't verify variances. Check your connection and retry before submitting.",
+            )
+            TextButton(onClick = onRetryReconcileTapped, modifier = Modifier.padding(horizontal = Spacing.screenPadding)) {
+                Text("RETRY")
+            }
         }
 
         Column(modifier = Modifier.padding(Spacing.screenPadding)) {

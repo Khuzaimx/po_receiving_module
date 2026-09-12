@@ -15,10 +15,13 @@ import com.sellernest.poreceiving.ui.screens.warehouseselection.FakeDraftDao
 import com.sellernest.poreceiving.work.submit.FakeSubmitScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNamingStrategy
 import okhttp3.MediaType.Companion.toMediaType
@@ -108,6 +111,22 @@ class ReviewSubmitViewModelTest {
         submitScheduler = submitScheduler,
     )
 
+    /**
+     * `load()`'s `/reconcile/` call is real MockWebServer I/O -- a genuine
+     * thread hop, not virtual time -- so it does not necessarily complete
+     * before the ViewModel constructor returns, even under
+     * [UnconfinedTestDispatcher]. Awaiting the real [ReviewSubmitViewModel.state]
+     * emission (rather than asserting immediately) is what actually
+     * synchronizes with it. The timeout must run on a real dispatcher, not
+     * runTest's virtual one -- under the virtual clock, `withTimeout` fires
+     * instantly the moment this coroutine is the only thing "running" on that
+     * scheduler, since nothing here ever advances virtual time.
+     */
+    private suspend fun ReviewSubmitViewModel.awaitLoaded(): ReviewSubmitUiState =
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(5_000) { state.first { !it.loading } }
+        }
+
     private val poDetailBody = """
         {"id": 10482, "number": "PO-10482", "vendor_name": "Globex Supply Co.",
          "warehouse": {"id": 2, "name": "DC-2", "enforce_bins": false}, "blind_count": true, "lines": []}
@@ -126,12 +145,13 @@ class ReviewSubmitViewModelTest {
         server.enqueue(MockResponse().setBody(poDetailBody))
         server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
         val vm = viewModel()
+        val state = vm.awaitLoaded()
 
-        assertEquals(1, vm.state.value.lineCount)
-        assertEquals(4, vm.state.value.goodQuantity) // 6 counted - 2 damaged
-        assertEquals(2, vm.state.value.damagedQuantity)
-        assertEquals(2, vm.state.value.missingQuantity) // expected 8 - counted 6
-        assertEquals("DC-2", vm.state.value.warehouseName)
+        assertEquals(1, state.lineCount)
+        assertEquals(4, state.goodQuantity) // 6 counted - 2 damaged
+        assertEquals(2, state.damagedQuantity)
+        assertEquals(2, state.missingQuantity) // expected 8 - counted 6
+        assertEquals("DC-2", state.warehouseName)
     }
 
     @Test
@@ -139,6 +159,7 @@ class ReviewSubmitViewModelTest {
         server.enqueue(MockResponse().setBody(poDetailBody))
         server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
         val vm = viewModel()
+        vm.awaitLoaded()
 
         vm.onEvent(ReviewSubmitUiEvent.SubmitTapped)
 
@@ -153,7 +174,7 @@ class ReviewSubmitViewModelTest {
         server.enqueue(MockResponse().setBody(poDetailBody))
         server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
 
-        viewModel() // load() alone persists it -- no SUBMIT tap needed
+        viewModel().awaitLoaded() // load() alone persists it -- no SUBMIT tap needed
 
         assertEquals(2, draftLineDao.getByPurchaseOrderItem(draftId, 1)?.missingQuantity)
     }
@@ -165,6 +186,7 @@ class ReviewSubmitViewModelTest {
         server.enqueue(MockResponse().setBody(poDetailBody))
         server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
         val vm = viewModel()
+        vm.awaitLoaded()
 
         vm.onEvent(ReviewSubmitUiEvent.SubmitTapped)
 
@@ -195,6 +217,7 @@ class ReviewSubmitViewModelTest {
             ),
         )
         val vm = viewModel()
+        vm.awaitLoaded()
 
         vm.onEvent(ReviewSubmitUiEvent.SubmitTapped)
 
@@ -207,6 +230,7 @@ class ReviewSubmitViewModelTest {
         server.enqueue(MockResponse().setBody(poDetailBody))
         server.enqueue(MockResponse().setBody(reconcileBodyWithVariance))
         val vm = viewModel()
+        vm.awaitLoaded()
 
         vm.onEvent(ReviewSubmitUiEvent.SaveAndExitTapped)
 

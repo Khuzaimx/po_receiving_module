@@ -89,6 +89,9 @@ fun PoReceivingNavGraph(
         poScopedRoute(Routes.PO_HEADER) {
             PoHeaderScreen(
                 onNavigateToScanToCount = { draftId -> navController.navigate(Routes.scanToCount(draftId)) },
+                onNavigateToReconcile = { draftId -> navController.navigate(Routes.reconcile(draftId)) },
+                onNavigateToReview = { draftId -> navController.navigate(Routes.reviewAndSubmit(draftId)) },
+                onNavigateToSubmissionQueue = { navController.navigate(Routes.SUBMISSION_QUEUE) },
             )
         }
 

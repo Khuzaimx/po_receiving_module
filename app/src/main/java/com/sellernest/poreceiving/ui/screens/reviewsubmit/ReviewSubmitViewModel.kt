@@ -38,7 +38,10 @@ class ReviewSubmitViewModel @Inject constructor(
 
     private val draftId: Long = checkNotNull(savedStateHandle["draftId"])
     private var warehouseEnforcesBins = false
-    private var varianceItemIdsMissingReason: Set<Long> = emptySet()
+
+    /** Null means "not yet verified" -- the reconcile call either hasn't
+     *  completed or last failed, and must never be treated as an empty set. */
+    private var varianceItemIdsMissingReason: Set<Long>? = null
 
     init {
         scope.launch { load() }
@@ -55,6 +58,7 @@ class ReviewSubmitViewModel @Inject constructor(
             ReviewSubmitUiEvent.SubmitTapped -> scope.launch { validateAndSubmit() }
             ReviewSubmitUiEvent.SaveAndExitTapped -> updateState { it.copy(savedAndExited = true) }
             ReviewSubmitUiEvent.BlockingMessageDismissed -> updateState { it.copy(blockingMessage = null) }
+            ReviewSubmitUiEvent.RetryReconcileTapped -> scope.launch { loadReconcileDerivedFields() }
         }
     }
 
@@ -88,31 +92,55 @@ class ReviewSubmitViewModel @Inject constructor(
             updateState { it.copy(binLabel = label) }
         }
 
-        val reconcileRequest = ReconcileRequest(lines = lines.map { ReconcileRequestLine(it.purchaseOrderItemId, it.countedQuantity) })
-        val reconcileResult = safeApiCall(json) { apiService.reconcile(draft.purchaseOrderId, reconcileRequest) }
-        if (reconcileResult is ApiResult.Success) {
-            val varianceLines = reconcileResult.body.lines.filter { line -> line.delta != 0 }
-            varianceItemIdsMissingReason = varianceLines
-                .map { it.purchaseOrderItemId }
-                .filterTo(mutableSetOf()) { itemId ->
-                    lines.firstOrNull { line -> line.purchaseOrderItemId == itemId }?.varianceReasonId == null
-                }
-            updateState {
-                it.copy(
-                    missingQuantity = varianceLines.sumOf { line -> if (line.delta < 0) -line.delta else 0 },
-                    varianceLines = varianceLines,
-                )
-            }
-            // Persisted now, once, from this one reconcile response, so every
-            // submit attempt -- the first and every retry -- reads back the
-            // same §9.4 quantity_missing (see DraftLineEntity.missingQuantity's doc).
-            reconcileResult.body.lines.forEach { line ->
-                val missing = if (line.delta < 0) -line.delta else 0
-                draftRepository.setMissingQuantity(draftId, line.purchaseOrderItemId, missing)
-            }
-        }
+        loadReconcileDerivedFields()
 
         updateState { it.copy(loading = false) }
+    }
+
+    /**
+     * §9.4: re-derives [ReviewSubmitUiState.missingQuantity] and the
+     * variance-reason-required check from a fresh `/reconcile/` call, and
+     * persists `quantity_missing` onto each line for [validateAndSubmit]'s
+     * eventual submit payload. Left in its "unavailable" state on failure --
+     * see [varianceItemIdsMissingReason]'s doc -- rather than defaulting to
+     * "nothing missing," which would let SUBMIT silently proceed with a wrong,
+     * zeroed-out payload (§1.1's "under-receive with no reason recorded" bug
+     * this screen exists to prevent).
+     */
+    private suspend fun loadReconcileDerivedFields() {
+        val draft = draftRepository.getDraft(draftId) ?: return
+        val lines = draftRepository.observeLines(draftId).first()
+
+        updateState { it.copy(reconcileUnavailable = false) }
+        val reconcileRequest = ReconcileRequest(lines = lines.map { ReconcileRequestLine(it.purchaseOrderItemId, it.countedQuantity) })
+        val reconcileResult = safeApiCall(json) { apiService.reconcile(draft.purchaseOrderId, reconcileRequest) }
+        when (reconcileResult) {
+            is ApiResult.Success -> {
+                val varianceLines = reconcileResult.body.lines.filter { line -> line.delta != 0 }
+                varianceItemIdsMissingReason = varianceLines
+                    .map { it.purchaseOrderItemId }
+                    .filterTo(mutableSetOf()) { itemId ->
+                        lines.firstOrNull { line -> line.purchaseOrderItemId == itemId }?.varianceReasonId == null
+                    }
+                updateState {
+                    it.copy(
+                        missingQuantity = varianceLines.sumOf { line -> if (line.delta < 0) -line.delta else 0 },
+                        varianceLines = varianceLines,
+                    )
+                }
+                // Persisted now, once, from this one reconcile response, so every
+                // submit attempt -- the first and every retry -- reads back the
+                // same §9.4 quantity_missing (see DraftLineEntity.missingQuantity's doc).
+                reconcileResult.body.lines.forEach { line ->
+                    val missing = if (line.delta < 0) -line.delta else 0
+                    draftRepository.setMissingQuantity(draftId, line.purchaseOrderItemId, missing)
+                }
+            }
+            else -> {
+                varianceItemIdsMissingReason = null
+                updateState { it.copy(missingQuantity = null, reconcileUnavailable = true) }
+            }
+        }
     }
 
     /**
@@ -124,8 +152,13 @@ class ReviewSubmitViewModel @Inject constructor(
      * second `/reconcile/` call for no new information.
      */
     private suspend fun validateAndSubmit() {
-        if (varianceItemIdsMissingReason.isNotEmpty()) {
-            updateState { it.copy(blockingMessage = "${varianceItemIdsMissingReason.size} line(s) still need a variance reason.") }
+        val missingReasonLines = varianceItemIdsMissingReason
+        if (missingReasonLines == null) {
+            updateState { it.copy(blockingMessage = "Couldn't verify variance reasons. Check your connection and try again.") }
+            return
+        }
+        if (missingReasonLines.isNotEmpty()) {
+            updateState { it.copy(blockingMessage = "${missingReasonLines.size} line(s) still need a variance reason.") }
             return
         }
 

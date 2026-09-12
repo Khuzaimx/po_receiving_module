@@ -61,6 +61,11 @@ class ReconcileViewModel @Inject constructor(
                 }
             }
 
+            ReconcileUiEvent.RetryRequested -> scope.launch {
+                updateState { it.copy(loading = true, errorMessage = null) }
+                loadReconciliation()
+            }
+
             ReconcileUiEvent.NavigationHandled ->
                 updateState { it.copy(navigateToBinConfirmationDraftId = null, navigateToReviewDraftId = null) }
         }

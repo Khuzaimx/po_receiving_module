@@ -69,6 +69,7 @@ fun ReconcileScreen(
         onDamageCaptureRequested = onNavigateToDamageCapture,
         onSerialCaptureRequested = onNavigateToSerialCapture,
         onContinueTapped = { viewModel.onEvent(ReconcileUiEvent.ContinueTapped) },
+        onRetryTapped = { viewModel.onEvent(ReconcileUiEvent.RetryRequested) },
     )
 }
 
@@ -80,6 +81,7 @@ internal fun ReconcileContent(
     onDamageCaptureRequested: (purchaseOrderItemId: Long) -> Unit,
     onSerialCaptureRequested: (purchaseOrderItemId: Long) -> Unit,
     onContinueTapped: () -> Unit,
+    onRetryTapped: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -109,6 +111,11 @@ internal fun ReconcileContent(
                 tone = StateTone.Error,
                 icon = Icons.Filled.Warning,
                 label = message,
+            )
+            PrimaryButton(
+                text = "RETRY",
+                onClick = onRetryTapped,
+                modifier = Modifier.padding(horizontal = Spacing.screenPadding),
             )
         }
 

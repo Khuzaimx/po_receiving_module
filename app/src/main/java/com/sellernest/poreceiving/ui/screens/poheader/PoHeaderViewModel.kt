@@ -5,6 +5,7 @@ import com.sellernest.poreceiving.core.mvvm.BaseViewModel
 import com.sellernest.poreceiving.data.local.DraftRepository
 import com.sellernest.poreceiving.data.local.dao.DraftDao
 import com.sellernest.poreceiving.data.local.dao.DraftLineDao
+import com.sellernest.poreceiving.data.local.entities.DraftState
 import com.sellernest.poreceiving.network.ApiResult
 import com.sellernest.poreceiving.network.ApiService
 import com.sellernest.poreceiving.network.safeApiCall
@@ -40,7 +41,7 @@ class PoHeaderViewModel @Inject constructor(
             PoHeaderUiEvent.DiscardRequested -> updateState { it.copy(showDiscardConfirmation = true) }
             PoHeaderUiEvent.DiscardCancelled -> updateState { it.copy(showDiscardConfirmation = false) }
             PoHeaderUiEvent.DiscardConfirmed -> scope.launch { discard() }
-            PoHeaderUiEvent.NavigationHandled -> updateState { it.copy(navigateToDraftId = null) }
+            PoHeaderUiEvent.NavigationHandled -> updateState { it.copy(navigateToDraftId = null, navigationTarget = null) }
         }
     }
 
@@ -79,12 +80,41 @@ class PoHeaderViewModel @Inject constructor(
         val detail = currentState.detail ?: return
         val warehouseId = warehouseSelectionStorage.current()?.warehouseId ?: return
         val draft = draftRepository.openPurchaseOrder(detail.id, detail.number, warehouseId)
-        updateState { it.copy(navigateToDraftId = draft.id) }
+        // existingDraftId/existingDraftState must reflect this draft immediately,
+        // not stay at whatever load() found (typically null, on a fresh PO) --
+        // otherwise canDiscardExistingDraft stays false and DISCARD DRAFT never
+        // appears until the screen happens to reload from scratch.
+        updateState {
+            it.copy(
+                navigateToDraftId = draft.id,
+                navigationTarget = PoHeaderNavigationTarget.SCAN_TO_COUNT,
+                existingDraftId = draft.id,
+                existingDraftState = draft.state,
+            )
+        }
     }
 
+    /**
+     * Routes to wherever the draft actually left off, not always Scan-to-Count:
+     * a draft that already reached RECONCILE/REVIEW/QUEUED must reopen on that
+     * same screen. Landing it on Scan-to-Count instead would let the receiver
+     * silently mutate a count that reconciliation has already computed deltas
+     * and reasons against, and tapping COMMIT COUNT again would then hit an
+     * illegal-transition crash in [DraftRepository.transition] (RECONCILE has
+     * no self-loop in [com.sellernest.poreceiving.data.local.DraftStateMachine]).
+     */
     private fun resumeDraft() {
         val draftId = currentState.existingDraftId ?: return
-        updateState { it.copy(navigateToDraftId = draftId) }
+        val target = when (currentState.existingDraftState) {
+            DraftState.PO_OPEN, DraftState.COUNTING, null -> PoHeaderNavigationTarget.SCAN_TO_COUNT
+            DraftState.RECONCILE, DraftState.VARIANCE_CAPTURE -> PoHeaderNavigationTarget.RECONCILE
+            DraftState.REVIEW -> PoHeaderNavigationTarget.REVIEW
+            DraftState.QUEUED -> PoHeaderNavigationTarget.SUBMISSION_QUEUE
+            // Never offered as a resumable draft in the first place (excluded
+            // by DraftDao.getActiveDraftFor) -- nothing sane to navigate to.
+            DraftState.RECEIPTED, DraftState.DISCARDED -> return
+        }
+        updateState { it.copy(navigateToDraftId = draftId, navigationTarget = target) }
     }
 
     /** §6.3/M3.7: "Explicit abandon from PO_OPEN transitions to DISCARDED

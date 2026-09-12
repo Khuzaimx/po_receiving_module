@@ -16,10 +16,13 @@ import com.sellernest.poreceiving.session.WarehouseSelectionStorage
 import com.sellernest.poreceiving.ui.screens.warehouseselection.FakeDraftDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNamingStrategy
 import okhttp3.MediaType.Companion.toMediaType
@@ -85,6 +88,22 @@ class PoHeaderViewModelTest {
             warehouseSelectionStorage = warehouseStorage,
         )
 
+    /**
+     * `load()`'s `getPurchaseOrderDetail` call is real MockWebServer I/O -- a
+     * genuine thread hop, not virtual time -- so it does not necessarily
+     * complete before the ViewModel constructor returns, even under
+     * [UnconfinedTestDispatcher]. Awaiting the real [PoHeaderViewModel.state]
+     * emission (rather than asserting immediately) is what actually
+     * synchronizes with it. The timeout runs on a real dispatcher, not
+     * runTest's virtual one -- under the virtual clock, `withTimeout` fires
+     * instantly once this coroutine is the only thing "running" on that
+     * scheduler, since nothing here ever advances virtual time.
+     */
+    private suspend fun PoHeaderViewModel.awaitLoaded(): PoHeaderUiState =
+        withContext(Dispatchers.Default.limitedParallelism(1)) {
+            withTimeout(5_000) { state.first { !it.loading } }
+        }
+
     private fun validPoDetailBody(blindCount: Boolean = true) = """
         {
           "id": 10482, "number": "PO-10482", "vendor_name": "Globex Supply Co.",
@@ -98,6 +117,7 @@ class PoHeaderViewModelTest {
         server.enqueue(MockResponse().setBody(validPoDetailBody()))
         val draftDao = FakeDraftDao()
         val vm = viewModel(draftDao)
+        vm.awaitLoaded()
 
         vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
 
@@ -112,6 +132,7 @@ class PoHeaderViewModelTest {
         server.enqueue(MockResponse().setBody(validPoDetailBody()))
         val draftDao = FakeDraftDao()
         val vm = viewModel(draftDao)
+        vm.awaitLoaded()
 
         vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
         val firstDraftId = vm.state.value.navigateToDraftId
@@ -122,11 +143,85 @@ class PoHeaderViewModelTest {
         assertEquals(firstDraftId, secondDraftId)
     }
 
+    /**
+     * RESUME DRAFT must reopen a draft on whatever screen its state actually
+     * left off on, never unconditionally on Scan-to-Count -- otherwise a
+     * receiver could reopen an already-reconciled draft mid-COUNTING, mutate a
+     * count reconciliation already computed deltas against, and crash on the
+     * next COMMIT COUNT (RECONCILE has no self-loop in DraftStateMachine).
+     */
+    private fun seededDraft(state: DraftState) = DraftEntity(
+        purchaseOrderId = 10482L,
+        purchaseOrderNumber = "PO-10482",
+        warehouseId = 2L,
+        state = state,
+        idempotencyKey = "idem-1",
+        createdAtEpochMillis = 0L,
+        updatedAtEpochMillis = 0L,
+    )
+
+    @Test
+    fun `resuming a draft still being counted navigates to Scan-to-Count`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        draftDao.seed(seededDraft(DraftState.COUNTING))
+        val vm = viewModel(draftDao)
+        vm.awaitLoaded()
+
+        vm.onEvent(PoHeaderUiEvent.ResumeDraftTapped)
+
+        assertTrue(vm.state.value.navigateToDraftId != null)
+        assertEquals(PoHeaderNavigationTarget.SCAN_TO_COUNT, vm.state.value.navigationTarget)
+    }
+
+    @Test
+    fun `resuming a draft already in RECONCILE navigates to Reconcile, not Scan-to-Count`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        draftDao.seed(seededDraft(DraftState.RECONCILE))
+        val vm = viewModel(draftDao)
+        vm.awaitLoaded()
+
+        vm.onEvent(PoHeaderUiEvent.ResumeDraftTapped)
+
+        assertTrue(vm.state.value.navigateToDraftId != null)
+        assertEquals(PoHeaderNavigationTarget.RECONCILE, vm.state.value.navigationTarget)
+    }
+
+    @Test
+    fun `resuming a draft already in REVIEW navigates to Review, not Scan-to-Count`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        draftDao.seed(seededDraft(DraftState.REVIEW))
+        val vm = viewModel(draftDao)
+        vm.awaitLoaded()
+
+        vm.onEvent(PoHeaderUiEvent.ResumeDraftTapped)
+
+        assertTrue(vm.state.value.navigateToDraftId != null)
+        assertEquals(PoHeaderNavigationTarget.REVIEW, vm.state.value.navigationTarget)
+    }
+
+    @Test
+    fun `resuming a draft already QUEUED navigates to the Submission Queue, not Scan-to-Count`() = runTest {
+        server.enqueue(MockResponse().setBody(validPoDetailBody()))
+        val draftDao = FakeDraftDao()
+        draftDao.seed(seededDraft(DraftState.QUEUED))
+        val vm = viewModel(draftDao)
+        vm.awaitLoaded()
+
+        vm.onEvent(PoHeaderUiEvent.ResumeDraftTapped)
+
+        assertTrue(vm.state.value.navigateToDraftId != null)
+        assertEquals(PoHeaderNavigationTarget.SUBMISSION_QUEUE, vm.state.value.navigationTarget)
+    }
+
     @Test
     fun `discard requires confirmation naming the PO and is only offered in PO_OPEN`() = runTest {
         server.enqueue(MockResponse().setBody(validPoDetailBody()))
         val draftDao = FakeDraftDao()
         val vm = viewModel(draftDao)
+        vm.awaitLoaded()
         vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
 
         assertTrue(vm.state.value.canDiscardExistingDraft)
@@ -146,6 +241,7 @@ class PoHeaderViewModelTest {
         val draftDao = FakeDraftDao()
         val draftLineDao = FakeDraftLineDao()
         val vm = viewModel(draftDao, draftLineDao)
+        vm.awaitLoaded()
         vm.onEvent(PoHeaderUiEvent.StartReceivingTapped)
         val draftId = requireNotNull(vm.state.value.navigateToDraftId)
 
@@ -161,6 +257,7 @@ class PoHeaderViewModelTest {
         vm.onEvent(PoHeaderUiEvent.NavigationHandled)
         server.enqueue(MockResponse().setBody(validPoDetailBody()))
         vm.onEvent(PoHeaderUiEvent.RetryRequested)
+        vm.awaitLoaded()
 
         assertFalse(vm.state.value.canDiscardExistingDraft)
     }
@@ -185,6 +282,7 @@ class PoHeaderViewModelTest {
         )
 
         val vm = viewModel()
+        vm.awaitLoaded()
 
         val detail = vm.state.value.detail!!
         assertTrue(detail.blindCount)
@@ -211,6 +309,7 @@ class PoHeaderViewModelTest {
         )
 
         val vm = viewModel()
+        vm.awaitLoaded()
 
         assertNull(vm.state.value.detail?.totalUnitsExpected)
         assertNull(vm.state.value.detail?.status)
@@ -221,6 +320,7 @@ class PoHeaderViewModelTest {
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
 
         val vm = viewModel()
+        vm.awaitLoaded()
 
         assertEquals("Connect to load PO #10482", vm.state.value.offlineMessage)
         assertNull(vm.state.value.detail)
@@ -254,6 +354,7 @@ class PoHeaderViewModelTest {
         }
 
         val vm = viewModel(draftDao, draftLineDao)
+        vm.awaitLoaded()
 
         assertEquals(18, vm.state.value.existingDraftScannedCount)
     }
@@ -273,6 +374,7 @@ class PoHeaderViewModelTest {
         )
 
         val vm = viewModel()
+        vm.awaitLoaded()
 
         assertNull(vm.state.value.existingDraftScannedCount)
         assertFalse(vm.state.value.loading)
