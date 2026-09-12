@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -40,7 +41,7 @@ fun StatusBar(
 }
 
 @Composable
-private fun StatusBarContent(
+internal fun StatusBarContent(
     state: StatusBarUiState,
     onPendingCountTapped: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -62,7 +63,14 @@ private fun StatusBarContent(
 
         if (state.pendingSubmissionCount > 0) {
             StateBadge(
-                modifier = Modifier.testTag("status_bar_pending_count").clickable(onClick = onPendingCountTapped),
+                // §3.1: "Touch targets: minimum 48dp." StateBadge's own visual
+                // size stays compact everywhere else it's used (non-interactive) --
+                // minimumInteractiveComponentSize only pads the tappable area for
+                // this one real onClick, without changing how the badge looks.
+                modifier = Modifier
+                    .testTag("status_bar_pending_count")
+                    .minimumInteractiveComponentSize()
+                    .clickable(onClick = onPendingCountTapped),
                 tone = StateTone.Pending,
                 icon = Icons.Filled.CloudUpload,
                 label = "${state.pendingSubmissionCount} queued",

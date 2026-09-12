@@ -37,13 +37,17 @@ data class ReconcileUiState(
 
     /** §7.7/§10: "CONTINUE stays disabled until every variance has a reason.
      *  If the receiver lacks over-receipt permission... the count must be
-     *  corrected or the line dropped." */
-    val canContinue: Boolean get() = !loading && allReasonsChosen && blockedOverReceiptLines.isEmpty()
+     *  corrected or the line dropped." A failed load leaves [lines] empty, which
+     *  would otherwise vacuously satisfy "every variance has a reason" -- errorMessage
+     *  must be null too, or a network failure silently lets CONTINUE through with
+     *  zero variances captured. */
+    val canContinue: Boolean get() = !loading && errorMessage == null && allReasonsChosen && blockedOverReceiptLines.isEmpty()
 }
 
 sealed interface ReconcileUiEvent : UiEvent {
     data class ReasonSelected(val purchaseOrderItemId: Long, val reasonId: Long) : ReconcileUiEvent
     data class NoteChanged(val purchaseOrderItemId: Long, val note: String) : ReconcileUiEvent
     data object ContinueTapped : ReconcileUiEvent
+    data object RetryRequested : ReconcileUiEvent
     data object NavigationHandled : ReconcileUiEvent
 }

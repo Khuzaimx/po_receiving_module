@@ -9,6 +9,8 @@ import com.sellernest.poreceiving.network.safeApiCall
 import com.sellernest.poreceiving.session.MeRepository
 import com.sellernest.poreceiving.session.WarehouseSelectionStorage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -21,6 +23,13 @@ class WorkQueueViewModel @Inject constructor(
     private val meRepository: MeRepository,
     private val warehouseSelectionStorage: WarehouseSelectionStorage,
 ) : BaseViewModel<WorkQueueUiState, WorkQueueUiEvent>(WorkQueueUiState()) {
+
+    /** Debounces and cancels superseded searches -- without this, a fast typist
+     *  fires one uncancelled network call per keystroke and, on uneven
+     *  latency (§1.2's "poor and intermittent Wi-Fi"), an earlier keystroke's
+     *  broader result set can arrive after and silently overwrite a later,
+     *  narrower one. */
+    private var searchJob: Job? = null
 
     init {
         scope.launch {
@@ -36,7 +45,11 @@ class WorkQueueViewModel @Inject constructor(
         when (event) {
             is WorkQueueUiEvent.SearchQueryChanged -> {
                 updateState { it.copy(searchQuery = event.query) }
-                scope.launch { refresh() }
+                searchJob?.cancel()
+                searchJob = scope.launch {
+                    delay(SEARCH_DEBOUNCE_MS)
+                    refresh()
+                }
             }
 
             WorkQueueUiEvent.RefreshRequested -> scope.launch { refresh() }
@@ -112,4 +125,8 @@ class WorkQueueViewModel @Inject constructor(
      *  POs with no delivery date sort last. */
     private fun List<PurchaseOrderSummary>.oldestDueFirst(): List<PurchaseOrderSummary> =
         sortedWith(compareBy(nullsLast()) { it.expectedDeliveryDate })
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 300L
+    }
 }

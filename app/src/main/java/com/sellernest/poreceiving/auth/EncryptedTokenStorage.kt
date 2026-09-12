@@ -7,6 +7,8 @@ import androidx.security.crypto.MasterKey
 import com.sellernest.poreceiving.network.TokenProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.GrantTypeValues
 import net.openid.appauth.TokenRequest
@@ -29,6 +31,8 @@ class EncryptedTokenStorage @Inject constructor(
     private val authorizationService: AuthorizationService,
     private val sessionInvalidationNotifier: SessionInvalidationNotifier,
 ) : TokenStorage, TokenProvider {
+
+    private val refreshMutex = Mutex()
 
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
@@ -66,14 +70,29 @@ class EncryptedTokenStorage @Inject constructor(
         prefs.edit().clear().apply()
     }
 
-    override suspend fun currentAccessToken(): String? {
-        val tokens = currentTokens() ?: return null
+    /**
+     * §5.2: "An in-progress count survives a logout or token expiry." Guarded
+     * by [refreshMutex] so concurrent callers -- a live screen's own API calls
+     * racing SubmitDraftWorker/UploadPhotoWorker, all sharing one OkHttpClient
+     * -- await a single in-flight refresh instead of each independently
+     * refreshing. Without this, if the identity provider rotates the refresh
+     * token on use (standard Keycloak behavior), only the first caller's
+     * refresh succeeds and every other concurrent caller sees its now-stale
+     * refresh token rejected, each independently wiping the just-saved fresh
+     * tokens and forcing a hard logout -- exactly the disruption this
+     * requirement exists to prevent, and most likely during the periods of
+     * heaviest legitimate background activity.
+     */
+    override suspend fun currentAccessToken(): String? = refreshMutex.withLock {
+        // Re-read inside the lock: a waiter that queued behind an in-flight
+        // refresh must see the tokens that refresh already saved, not repeat it.
+        val tokens = currentTokens() ?: return@withLock null
         if (!needsRefresh(tokens.accessTokenExpiryEpochMillis)) {
-            return tokens.accessToken
+            return@withLock tokens.accessToken
         }
 
         val refreshed = refresh(tokens.refreshToken)
-        return if (refreshed != null) {
+        if (refreshed != null) {
             saveTokens(refreshed)
             refreshed.accessToken
         } else {

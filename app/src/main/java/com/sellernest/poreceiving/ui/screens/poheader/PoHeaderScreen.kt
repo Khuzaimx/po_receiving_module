@@ -25,14 +25,25 @@ import com.sellernest.poreceiving.ui.theme.StateTone
 
 /** §7.4, §9.2, §6.2. */
 @Composable
-fun PoHeaderScreen(onNavigateToScanToCount: (draftId: Long) -> Unit, viewModel: PoHeaderViewModel = hiltViewModel()) {
+fun PoHeaderScreen(
+    onNavigateToScanToCount: (draftId: Long) -> Unit,
+    onNavigateToReconcile: (draftId: Long) -> Unit,
+    onNavigateToReview: (draftId: Long) -> Unit,
+    onNavigateToSubmissionQueue: () -> Unit,
+    viewModel: PoHeaderViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsState()
 
     LaunchedEffect(state.navigateToDraftId) {
-        state.navigateToDraftId?.let { draftId ->
-            onNavigateToScanToCount(draftId)
-            viewModel.onEvent(PoHeaderUiEvent.NavigationHandled)
+        val draftId = state.navigateToDraftId ?: return@LaunchedEffect
+        when (state.navigationTarget) {
+            PoHeaderNavigationTarget.SCAN_TO_COUNT -> onNavigateToScanToCount(draftId)
+            PoHeaderNavigationTarget.RECONCILE -> onNavigateToReconcile(draftId)
+            PoHeaderNavigationTarget.REVIEW -> onNavigateToReview(draftId)
+            PoHeaderNavigationTarget.SUBMISSION_QUEUE -> onNavigateToSubmissionQueue()
+            null -> Unit
         }
+        viewModel.onEvent(PoHeaderUiEvent.NavigationHandled)
     }
 
     PoHeaderContent(
